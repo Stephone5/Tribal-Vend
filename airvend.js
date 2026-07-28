@@ -11,31 +11,56 @@ import * as cheerio from "cheerio";
 
 const BASE = "https://live.app.air-vend.com";
 
-function cookieHeader(setCookies) {
-  // keep only the "name=value" part of each Set-Cookie line
-  return setCookies.map(c => c.split(";")[0]).join("; ");
+// Accumulate Set-Cookie lines into a name→value jar (last value wins; a cleared
+// cookie is removed). AirVend's login sets cookies across several redirect hops.
+function updateJar(jar, setCookies) {
+  for (const c of setCookies) {
+    const nv = c.split(";")[0];
+    const i = nv.indexOf("=");
+    if (i < 0) continue;
+    const name = nv.slice(0, i).trim();
+    const val = nv.slice(i + 1);
+    if (val === "" || /expires=Thu, 01 Jan 1970/i.test(c)) jar.delete(name);
+    else jar.set(name, val);
+  }
+}
+function jarHeader(jar) {
+  return [...jar.entries()].map(([k, v]) => `${k}=${v}`).join("; ");
 }
 
-// Log in and return a Cookie header string for authenticated requests.
+// Log in and return a Cookie header string. Follows AirVend's multi-hop login
+// chain (Login/Validate → Account/VerifyAuth → …) accumulating cookies, until it
+// lands on a real page. A bounce back to /Login means bad credentials.
 export async function login() {
   const user = process.env.AIRVEND_USER, pass = process.env.AIRVEND_PASS;
   if (!user || !pass) throw new Error("AirVend login isn't configured on the server (AIRVEND_USER / AIRVEND_PASS).");
 
-  const body = new URLSearchParams({ UserName: user, Password: pass, RememberMe: "true", ReturnUrl: "" });
-  const res = await fetch(`${BASE}/Login/Validate`, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body,
-    redirect: "manual"
-  });
+  const jar = new Map();
+  let url = `${BASE}/Login/Validate`;
+  let method = "POST";
+  let body = new URLSearchParams({ UserName: user, Password: pass, RememberMe: "true", ReturnUrl: "" });
 
-  const cookies = res.headers.getSetCookie?.() || [];
-  // Success = a redirect (302/303) away from the login page, with a session cookie.
-  // A 200 means AirVend re-rendered the login page → bad credentials.
-  const redirected = res.status >= 300 && res.status < 400;
-  if (!redirected) throw new Error("AirVend login failed — check the username and password.");
-  if (!cookies.length) throw new Error("AirVend login returned no session cookie.");
-  return cookieHeader(cookies);
+  for (let hop = 0; hop < 6; hop++) {
+    const headers = { Cookie: jarHeader(jar) };
+    if (method === "POST") headers["Content-Type"] = "application/x-www-form-urlencoded";
+    const res = await fetch(url, { method, headers, body: method === "POST" ? body : undefined, redirect: "manual" });
+    updateJar(jar, res.headers.getSetCookie?.() || []);
+
+    if (res.status >= 300 && res.status < 400) {
+      let loc = res.headers.get("location");
+      if (!loc) break;
+      if (loc.startsWith("/")) loc = BASE + loc;
+      if (/\/Login(\?|\/|$)/i.test(loc) && hop > 0) throw new Error("AirVend login failed — check the username and password.");
+      url = loc; method = "GET"; body = undefined;
+      continue;
+    }
+    break; // landed on a real page
+  }
+
+  if (![...jar.keys()].some(k => /ASPXFORMSAUTH/i.test(k))) {
+    throw new Error("AirVend login failed — no session was established.");
+  }
+  return jarHeader(jar);
 }
 
 // Read the live inventory form for a machine into { fields, slots }.
