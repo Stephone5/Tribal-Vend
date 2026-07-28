@@ -40,12 +40,13 @@ app.post("/api/generate", async (req, res) => {
   }
 });
 
-// AirVend: turn reported par gaps into a per-slot on-hand map.
-// Gaps are slots stocked BELOW par; every other slot is assumed full to par.
-function gapsToOnHand(gaps) {
+// AirVend: turn the reported short slots into a per-slot "missing" map.
+// Each entry is how many units are missing from that slot; every slot not
+// listed is assumed full to par.
+function gapsToMissing(gaps) {
   const map = {};
   for (const g of gaps || []) {
-    if (g && g.slot != null && g.par != null && !isNaN(Number(g.par))) map[String(g.slot)] = Number(g.par);
+    if (g && g.slot != null && g.missing != null && !isNaN(Number(g.missing))) map[String(g.slot)] = Number(g.missing);
   }
   return map;
 }
@@ -55,7 +56,7 @@ app.post("/api/airvend/preview", async (req, res) => {
   const { machineId, gaps } = req.body || {};
   if (!machineId) return res.status(400).json({ error: "bad_request", message: "No machine specified." });
   try {
-    const result = await writeOnHand(machineId, gapsToOnHand(gaps), { dryRun: true });
+    const result = await writeOnHand(machineId, gapsToMissing(gaps), { dryRun: true });
     res.json(result);
   } catch (err) {
     console.error("airvend preview error:", err?.message || err);
@@ -68,7 +69,7 @@ app.post("/api/airvend/write", async (req, res) => {
   const { machineId, gaps } = req.body || {};
   if (!machineId) return res.status(400).json({ error: "bad_request", message: "No machine specified." });
   try {
-    const result = await writeOnHand(machineId, gapsToOnHand(gaps), { dryRun: false });
+    const result = await writeOnHand(machineId, gapsToMissing(gaps), { dryRun: false });
     res.json(result);
   } catch (err) {
     console.error("airvend write error:", err?.message || err);

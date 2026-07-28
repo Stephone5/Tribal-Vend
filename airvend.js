@@ -105,9 +105,10 @@ export async function getForm(cookie, machineId) {
 }
 
 // Set each slot's true on-hand count and post it back.
-// onHandBySlot: { "<slotKey>": count }. Slots not listed default to full (MaxCapacity).
+// missingBySlot: { "<slotKey>": unitsMissing }. For a listed slot, on-hand = par − missing.
+// Every slot NOT listed is assumed full to par (its MaxCapacity).
 // Returns a plan of { slot, product, from, to }. dryRun:true (default) writes nothing.
-export async function writeOnHand(machineId, onHandBySlot = {}, { dryRun = true } = {}) {
+export async function writeOnHand(machineId, missingBySlot = {}, { dryRun = true } = {}) {
   const cookie = await login();
   const { fields, slots } = await getForm(cookie, machineId);
 
@@ -116,8 +117,8 @@ export async function writeOnHand(machineId, onHandBySlot = {}, { dryRun = true 
 
   const plan = [];
   for (const s of slots) {
-    const listed = Object.prototype.hasOwnProperty.call(onHandBySlot, s.key);
-    const to = listed ? Number(onHandBySlot[s.key]) : s.max; // unlisted = filled to par
+    const missing = Object.prototype.hasOwnProperty.call(missingBySlot, s.key) ? Number(missingBySlot[s.key]) : 0;
+    const to = Math.max(0, s.max - missing); // full to par, minus what's missing
     payload[`${s.prefix}.Quantity`] = String(to);
     plan.push({ slot: s.key, product: s.product, from: s.onHand, to });
   }

@@ -165,20 +165,19 @@ function renderRuns(){
   MACHINES.forEach(m=>sel.appendChild(el(`<option value="${m.id}">${m.name} — refilled ${m.lastRefill}</option>`)));
   root.appendChild(pick);
 
-  root.appendChild(el(`<div class="note">Enter how many you brought vs how many actually went in ("filled to par"). Anything short tells the system the machine holds less than it thinks.</div>`));
+  root.appendChild(el(`<div class="note">Everything's full to par unless you say otherwise. Find the few slots that came up short and enter <b>how many are missing</b>. Leave the rest blank — the app fills them to par.</div>`));
 
-  root.appendChild(el(`<h2 style="margin-top:22px">Par gaps <span style="text-transform:none;letter-spacing:0;color:var(--muted);font-weight:400">— only fill the short ones</span></h2>`));
+  root.appendChild(el(`<h2 style="margin-top:22px">Short slots <span style="text-transform:none;letter-spacing:0;color:var(--muted);font-weight:400">— enter how many are missing</span></h2>`));
 
-  // Build a par-gap list from the Meals machine slots (unique by slot number sans letter suffix)
   const seen=new Set(); const list=el(`<div class="parlist"></div>`);
   SLOTS.forEach(sl=>{
     const base=sl.slot.replace(/[a-z]/,"");
     if(seen.has(base)) return; seen.add(base);
-    list.appendChild(el(`<div class="par"><div class="sl">${base}</div><div class="pi">${sl.item}</div><input type="text" inputmode="numeric" placeholder="par" data-slot="${base}" data-item="${sl.item}"></div>`));
+    list.appendChild(el(`<div class="par"><div class="sl">${base}</div><div class="pi">${sl.item}</div><input type="text" inputmode="numeric" placeholder="missing" data-slot="${base}" data-item="${sl.item}"></div>`));
   });
   root.appendChild(list);
 
-  const gen=el(`<button class="btn">Generate buy list →</button>`);
+  const gen=el(`<button class="btn">Generate →</button>`);
   const out=el(`<div id="buyout"></div>`);
   gen.onclick=()=>buildBuyList(sel,list,out,gen);
   root.appendChild(gen);
@@ -186,10 +185,10 @@ function renderRuns(){
 }
 
 async function buildBuyList(sel, list, out, gen){
-  const shorts=[...list.querySelectorAll("input")].map(i=>({slot:i.dataset.slot,item:i.dataset.item,par:parseInt(i.value,10)})).filter(x=>!isNaN(x.par)&&x.par>0);
+  const shorts=[...list.querySelectorAll("input")].map(i=>({slot:i.dataset.slot,item:i.dataset.item,missing:parseInt(i.value,10)})).filter(x=>!isNaN(x.missing)&&x.missing>0);
   const machine = sel.options[sel.selectedIndex]?.textContent.split(" — ")[0] || "unknown";
   out.innerHTML="";
-  if(!shorts.length){ out.appendChild(el(`<div class="empty">No gaps entered — machine reported full. Nothing to buy.</div>`)); return; }
+  if(!shorts.length){ out.appendChild(el(`<div class="empty">Nothing entered — machine's full to par. Nothing to buy.</div>`)); return; }
   try{ localStorage.setItem("tv_lastrun", JSON.stringify({at:Date.now(),machine,shorts})); }catch(e){}
 
   gen.disabled=true; gen.textContent="Thinking…";
@@ -250,7 +249,7 @@ function renderBrain(out, b, ctx){
 // Two-step AirVend push: Preview (safe, writes nothing) → Confirm & write.
 function renderAirvendSync(out, ctx){
   out.appendChild(el(`<h2>Update AirVend</h2>`));
-  const card=el(`<div class="card"><div class="ct">Set ${ctx.machine}'s inventory to match</div><div class="cs">Everything full to par except the gaps you entered</div></div>`);
+  const card=el(`<div class="card"><div class="ct">Set ${ctx.machine}'s inventory to match</div><div class="cs">Full to par, minus what you marked missing</div></div>`);
   const btn=el(`<button class="btn ghost" style="margin-top:12px">Preview the update →</button>`);
   const area=el(`<div></div>`);
   card.appendChild(btn); card.appendChild(area);

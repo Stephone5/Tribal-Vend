@@ -75,13 +75,13 @@ export async function runBrain(run) {
 
   const machine = run.machine || "unknown machine";
   const gaps = Array.isArray(run.shorts) && run.shorts.length
-    ? run.shorts.map(g => `slot ${g.slot} (${g.item}): reported par ${g.par}`).join("\n")
-    : "No par gaps reported — machine came back full.";
+    ? run.shorts.map(g => `slot ${g.slot} (${g.item}): short by ${g.missing} units`).join("\n")
+    : "No short slots reported — machine came back full to par.";
 
   const userMsg =
 `Service run just completed on: ${machine}.
 
-Par gaps reported by the person servicing the machine (how many each short slot was stocked TO):
+Short slots reported by the person servicing the machine (how many units are MISSING from each; every slot not listed is full to par):
 ${gaps}
 
 Business context:
