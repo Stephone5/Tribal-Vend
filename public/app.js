@@ -209,7 +209,7 @@ async function buildBuyList(sel, list, out, gen){
   if(!res.ok || body.error){
     return renderLocalList(out, shorts, body.message || "The brain hit an error.");
   }
-  renderBrain(out, body);
+  renderBrain(out, body, { machineId: sel.value, machine, gaps: shorts });
 }
 
 // Raw fallback: just the counts entered, shown clearly, with why the brain didn't run.
@@ -223,7 +223,7 @@ function renderLocalList(out, shorts, why){
 }
 
 // Full brain result: summary, reconciliation, buy list in cases, change orders.
-function renderBrain(out, b){
+function renderBrain(out, b, ctx){
   if(b.summary) out.appendChild(el(`<div class="note" style="border-left-color:var(--good);margin-top:24px">${b.summary}</div>`));
 
   if(b.buyList && b.buyList.length){
@@ -243,6 +243,51 @@ function renderBrain(out, b){
   }
 
   if(b.reconciliation) out.appendChild(el(`<div class="note">${b.reconciliation}</div>`));
+
+  if(ctx && ctx.machineId) renderAirvendSync(out, ctx);
+}
+
+// Two-step AirVend push: Preview (safe, writes nothing) → Confirm & write.
+function renderAirvendSync(out, ctx){
+  out.appendChild(el(`<h2>Update AirVend</h2>`));
+  const card=el(`<div class="card"><div class="ct">Set ${ctx.machine}'s inventory to match</div><div class="cs">Everything full to par except the gaps you entered</div></div>`);
+  const btn=el(`<button class="btn ghost" style="margin-top:12px">Preview the update →</button>`);
+  const area=el(`<div></div>`);
+  card.appendChild(btn); card.appendChild(area);
+  out.appendChild(card);
+
+  btn.onclick=async()=>{
+    btn.disabled=true; btn.textContent="Checking AirVend…"; area.innerHTML="";
+    let res, body;
+    try{
+      res=await fetch("/api/airvend/preview",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({machineId:ctx.machineId,gaps:ctx.gaps})});
+      body=await res.json();
+    }catch(e){ btn.disabled=false; btn.textContent="Preview the update →"; area.appendChild(el(`<div class="note">Couldn't reach the server.</div>`)); return; }
+    btn.disabled=false; btn.textContent="Preview the update →";
+    if(!res.ok||body.error){ area.appendChild(el(`<div class="note">${body.message||"Couldn't reach AirVend. Nothing was changed."}</div>`)); return; }
+    renderAirvendPlan(area, ctx, body.plan||[]);
+  };
+}
+
+function renderAirvendPlan(area, ctx, plan){
+  area.innerHTML="";
+  const changed=plan.filter(p=>p.from!==p.to);
+  area.appendChild(el(`<div class="note" style="border-left-color:var(--warn)">Preview only — nothing sent yet. ${changed.length} slot${changed.length===1?"":"s"} would change; the rest already match.</div>`));
+  const rows=el(`<div class="rows"></div>`);
+  (changed.length?changed:plan.slice(0,6)).forEach(p=>rows.appendChild(el(`<div class="row"><div class="nm">${p.product}<div class="mt">slot ${p.slot}</div></div><div class="val">${p.from} → ${p.to}</div></div>`)));
+  area.appendChild(rows);
+  const confirm=el(`<button class="btn" style="margin-top:14px">Confirm & write to AirVend</button>`);
+  area.appendChild(confirm);
+  confirm.onclick=async()=>{
+    confirm.disabled=true; confirm.textContent="Writing to AirVend…";
+    let res, body;
+    try{
+      res=await fetch("/api/airvend/write",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({machineId:ctx.machineId,gaps:ctx.gaps})});
+      body=await res.json();
+    }catch(e){ confirm.disabled=false; confirm.textContent="Confirm & write to AirVend"; area.appendChild(el(`<div class="note">Couldn't reach the server.</div>`)); return; }
+    if(!res.ok||body.error){ confirm.disabled=false; confirm.textContent="Confirm & write to AirVend"; area.appendChild(el(`<div class="note">${body.message||"AirVend rejected the update. Nothing was changed."}</div>`)); return; }
+    confirm.replaceWith(el(`<div class="note" style="border-left-color:var(--good)">Done — AirVend now shows ${body.wrote} slots at their true counts for ${ctx.machine}.</div>`));
+  };
 }
 
 // ---------- boot ----------
