@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0d0d0d">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<title>Tribal Vend</title>
+<style>
+  :root{
+    color-scheme: dark;
+    --plane:#0d0d0d; --surface:#1a1a19; --surface-2:#232321;
+    --ink:#ffffff; --ink-2:#c3c2b7; --muted:#898781;
+    --grid:#2c2c2a; --baseline:#383835; --border:rgba(255,255,255,.10);
+    --s1:#3987e5; --s2:#d95926; --s3:#199e70; --s4:#c98500;
+    --s5:#d55181; --s6:#008300; --s7:#9085e9; --s8:#e66767;
+    --good:#0ca30c; --bad:#d03b3b; --warn:#fab219;
+    --accent:#3987e5;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{
+    background:var(--plane); color:var(--ink);
+    font-family:system-ui,-apple-system,"Segoe UI",sans-serif;
+    -webkit-font-smoothing:antialiased;
+    padding-bottom:calc(72px + env(safe-area-inset-bottom));
+  }
+  header{
+    padding:calc(14px + env(safe-area-inset-top)) 18px 12px;
+    display:flex; align-items:baseline; gap:10px;
+    border-bottom:1px solid var(--border);
+    position:sticky; top:0; background:var(--plane); z-index:5;
+  }
+  header .logo{font-weight:800; letter-spacing:-.02em; font-size:19px}
+  header .sub{color:var(--muted); font-size:12px}
+  main{padding:16px 14px 24px; max-width:760px; margin:0 auto}
+  section[hidden]{display:none}
+  h2{font-size:13px; text-transform:uppercase; letter-spacing:.08em; color:var(--muted); margin:26px 4px 10px; font-weight:700}
+  h2:first-child{margin-top:6px}
+
+  /* stat tiles */
+  .tiles{display:grid; grid-template-columns:1fr 1fr; gap:10px}
+  .tile{background:var(--surface); border:1px solid var(--border); border-radius:16px; padding:14px 15px}
+  .tile .k{color:var(--muted); font-size:12px; font-weight:600}
+  .tile .v{font-size:26px; font-weight:800; letter-spacing:-.02em; margin-top:3px}
+  .tile .d{font-size:12px; margin-top:2px; font-weight:600}
+  .up{color:var(--good)} .down{color:var(--bad)}
+
+  .card{background:var(--surface); border:1px solid var(--border); border-radius:18px; padding:16px 14px 12px}
+  .card + .card{margin-top:12px}
+  .card .ct{font-weight:700; font-size:15px; margin:0 2px 2px}
+  .card .cs{color:var(--muted); font-size:12px; margin:0 2px 12px}
+  svg.chart{display:block; width:100%; height:auto; overflow:visible}
+  .legend{display:flex; flex-wrap:wrap; gap:12px; margin:10px 2px 2px}
+  .legend span{display:inline-flex; align-items:center; gap:6px; font-size:12px; color:var(--ink-2)}
+  .legend i{width:10px; height:10px; border-radius:3px; display:inline-block}
+
+  .rows{margin-top:4px}
+  .row{display:flex; align-items:center; gap:10px; padding:9px 4px; border-top:1px solid var(--grid)}
+  .row:first-child{border-top:0}
+  .row .nm{flex:1; font-size:14px; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .row .mt{font-size:12px; color:var(--muted)}
+  .row .val{font-weight:700; font-variant-numeric:tabular-nums; font-size:14px}
+
+  /* nav */
+  nav{
+    position:fixed; left:0; right:0; bottom:0; z-index:10;
+    display:flex; background:rgba(20,20,19,.92); backdrop-filter:blur(12px);
+    border-top:1px solid var(--border);
+    padding-bottom:env(safe-area-inset-bottom);
+  }
+  nav button{
+    flex:1; background:none; border:0; color:var(--muted);
+    padding:11px 4px 12px; font-size:11px; font-weight:700; letter-spacing:.02em;
+    display:flex; flex-direction:column; align-items:center; gap:4px; cursor:pointer;
+  }
+  nav button svg{width:23px; height:23px; stroke:currentColor; fill:none; stroke-width:1.8}
+  nav button.on{color:var(--accent)}
+
+  /* runs / input */
+  .field{margin:14px 0}
+  .field label{display:block; font-size:13px; color:var(--ink-2); font-weight:600; margin-bottom:7px}
+  select,input[type=text]{
+    width:100%; background:var(--surface-2); border:1px solid var(--border); color:var(--ink);
+    border-radius:12px; padding:13px 14px; font-size:16px; font-family:inherit;
+  }
+  .parlist{margin-top:6px}
+  .par{display:flex; align-items:center; gap:10px; padding:10px 2px; border-top:1px solid var(--grid)}
+  .par .sl{width:44px; font-weight:700; color:var(--muted); font-size:13px}
+  .par .pi{flex:1; font-size:14px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .par input{width:66px; text-align:center; padding:9px 6px; font-size:16px}
+  .btn{
+    display:block; width:100%; margin-top:18px; background:var(--accent); color:#fff;
+    border:0; border-radius:14px; padding:16px; font-size:16px; font-weight:800; cursor:pointer;
+  }
+  .btn.ghost{background:var(--surface-2); color:var(--ink); border:1px solid var(--border)}
+  .note{background:var(--surface); border:1px solid var(--border); border-left:3px solid var(--accent);
+        border-radius:12px; padding:12px 14px; font-size:13px; color:var(--ink-2); line-height:1.5; margin-top:14px}
+  .buy .row .val{color:var(--good)}
+  .empty{color:var(--muted); font-size:13px; text-align:center; padding:26px 10px}
+  .pill{display:inline-block; font-size:11px; font-weight:700; padding:3px 9px; border-radius:99px}
+  .pill.bad{background:rgba(208,59,59,.15); color:#f08b8b}
+  .pill.warn{background:rgba(250,178,25,.15); color:#f7c65a}
+</style>
+</head>
+<body>
+<header>
+  <span class="logo">Tribal Vend</span>
+  <span class="sub">2 machines · State College</span>
+</header>
+
+<main>
+  <!-- ============ COMPANY (visualizations) ============ -->
+  <section id="company"></section>
+
+  <!-- ============ RUNS (input) ============ -->
+  <section id="runs" hidden></section>
+</main>
+
+<nav>
+  <button data-tab="company" class="on">
+    <svg viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>
+    Company
+  </button>
+  <button data-tab="runs">
+    <svg viewBox="0 0 24 24"><path d="M3 6h18M3 12h18M3 18h12"/><circle cx="19" cy="18" r="2"/></svg>
+    Runs
+  </button>
+</nav>
+
+<script type="module" src="app.js"></script>
+<script>
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(()=>{}));
+  }
+</script>
+</body>
+</html>

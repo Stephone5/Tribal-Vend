@@ -1,0 +1,16 @@
+# Render deployment blueprint. When you connect this repo on render.com,
+# Render reads this file and configures everything automatically.
+services:
+  - type: web
+    name: tribal-vend
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      # The API key is NOT stored here. Render prompts you to paste it in the
+      # dashboard (kept secret), so it never lands in the code or the repo.
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: BRAIN_MODEL
+        value: claude-opus-5

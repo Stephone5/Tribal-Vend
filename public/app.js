@@ -1,0 +1,250 @@
+import { MONTHLY, FIXED_COSTS, SLOTS, WINDOW_LABEL, MACHINES } from "./data.js";
+
+const $ = (s, r=document) => r.querySelector(s);
+const money = n => (n<0?"-$":"$") + Math.abs(n).toLocaleString("en-US",{maximumFractionDigits:0});
+const money2 = n => (n<0?"-$":"$") + Math.abs(n).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});
+const el = (html) => { const t=document.createElement("template"); t.innerHTML=html.trim(); return t.content.firstChild; };
+const SVGNS="http://www.w3.org/2000/svg";
+
+// ---------- tab nav ----------
+document.querySelectorAll("nav button").forEach(b=>{
+  b.onclick = () => {
+    document.querySelectorAll("nav button").forEach(x=>x.classList.toggle("on", x===b));
+    const tab=b.dataset.tab;
+    $("#company").hidden = tab!=="company";
+    $("#runs").hidden = tab!=="runs";
+    window.scrollTo(0,0);
+  };
+});
+
+// ---------- tiny SVG chart helpers ----------
+function svg(w,h){ const s=document.createElementNS(SVGNS,"svg"); s.setAttribute("class","chart"); s.setAttribute("viewBox",`0 0 ${w} ${h}`); return s; }
+function line(s,x1,y1,x2,y2,stroke,sw=1){ const l=document.createElementNS(SVGNS,"line"); l.setAttribute("x1",x1);l.setAttribute("y1",y1);l.setAttribute("x2",x2);l.setAttribute("y2",y2);l.setAttribute("stroke",stroke);l.setAttribute("stroke-width",sw); s.appendChild(l); return l; }
+function txt(s,x,y,str,{fill="var(--muted)",size=11,anchor="middle",weight=400,tab=false}={}){ const t=document.createElementNS(SVGNS,"text"); t.setAttribute("x",x);t.setAttribute("y",y);t.setAttribute("fill",fill);t.setAttribute("font-size",size);t.setAttribute("text-anchor",anchor);t.setAttribute("font-weight",weight); if(tab)t.setAttribute("font-variant-numeric","tabular-nums"); t.textContent=str; s.appendChild(t); return t; }
+function rrect(s,x,y,w,h,fill,r=3){ const p=document.createElementNS(SVGNS,"rect"); p.setAttribute("x",x);p.setAttribute("y",y);p.setAttribute("width",Math.max(0,w));p.setAttribute("height",Math.max(0,h));p.setAttribute("rx",r);p.setAttribute("fill",fill); s.appendChild(p); return p; }
+
+// niceMax for axis
+function niceMax(v){ const p=Math.pow(10,Math.floor(Math.log10(v))); const n=v/p; const step=n<=1?1:n<=2?2:n<=5?5:10; return step*p; }
+
+// Line chart (single series) with area, gridlines, x labels
+function lineChart(series, {yfmt=money, color="var(--s1)"}={}){
+  const W=680,H=210, L=8,R=8,T=12,B=26;
+  const s=svg(W,H);
+  const vals=series.map(d=>d.v);
+  const max=niceMax(Math.max(...vals)*1.1), min=0;
+  const iw=W-L-R, ih=H-T-B;
+  const xf=i=> L + (series.length===1?iw/2:(i/(series.length-1))*iw);
+  const yf=v=> T + ih - ((v-min)/(max-min))*ih;
+  // gridlines
+  for(let g=0; g<=2; g++){ const yv=max*g/2; const y=yf(yv); line(s,L,y,W-R,y,"var(--grid)",1); txt(s,L,y-4,yfmt(yv),{anchor:"start",size:10}); }
+  // area
+  let dp=`M ${xf(0)} ${yf(vals[0])}`; series.forEach((d,i)=>dp+=` L ${xf(i)} ${yf(d.v)}`);
+  const area=document.createElementNS(SVGNS,"path"); area.setAttribute("d",dp+` L ${xf(series.length-1)} ${yf(0)} L ${xf(0)} ${yf(0)} Z`); area.setAttribute("fill",color); area.setAttribute("opacity",".12"); s.appendChild(area);
+  // line
+  const p=document.createElementNS(SVGNS,"path"); p.setAttribute("d",dp); p.setAttribute("fill","none"); p.setAttribute("stroke",color); p.setAttribute("stroke-width",2); p.setAttribute("stroke-linejoin","round"); p.setAttribute("stroke-linecap","round"); s.appendChild(p);
+  // end dot + label
+  const li=series.length-1;
+  const dot=document.createElementNS(SVGNS,"circle"); dot.setAttribute("cx",xf(li));dot.setAttribute("cy",yf(vals[li]));dot.setAttribute("r",4);dot.setAttribute("fill",color); s.appendChild(dot);
+  // x labels (first, mid, last)
+  [0, Math.floor(series.length/2), series.length-1].forEach(i=>txt(s,xf(i),H-8,series[i].m,{size:10}));
+  return s;
+}
+
+// Grouped bars: money in vs out per month (last 12)
+function inOutChart(rows){
+  const W=680,H=220,L=8,R=8,T=12,B=28;
+  const s=svg(W,H);
+  const max=niceMax(Math.max(...rows.map(d=>Math.max(d.in,d.out)))*1.1);
+  const iw=W-L-R, ih=H-T-B;
+  const yf=v=>T+ih-(v/max)*ih;
+  for(let g=0; g<=2; g++){ const yv=max*g/2; const y=yf(yv); line(s,L,y,W-R,y,"var(--grid)",1); txt(s,L,y-4,money(yv),{anchor:"start",size:10}); }
+  const gw=iw/rows.length, bw=Math.min(11,(gw-6)/2);
+  rows.forEach((d,i)=>{
+    const cx=L+i*gw+gw/2;
+    rrect(s,cx-bw-1,yf(d.in),bw,ih-(yf(d.in)-T),"var(--s3)",3);
+    rrect(s,cx+1,yf(d.out),bw,ih-(yf(d.out)-T),"var(--s2)",3);
+  });
+  [0,Math.floor(rows.length/2),rows.length-1].forEach(i=>txt(s,L+i*gw+gw/2,H-9,rows[i].m,{size:10}));
+  return s;
+}
+
+// Horizontal bars (top earners / losers)
+function hbars(items, {color="var(--s1)", neg=false}={}){
+  const rowH=30, W=680, L=118, R=54, T=6;
+  const H=T+items.length*rowH+4;
+  const s=svg(W,H);
+  const max=Math.max(...items.map(d=>Math.abs(d.v)));
+  const iw=W-L-R;
+  items.forEach((d,i)=>{
+    const y=T+i*rowH;
+    txt(s,L-8,y+rowH/2+4,d.k,{anchor:"end",size:12,fill:"var(--ink-2)",weight:600});
+    const w=(Math.abs(d.v)/max)*iw;
+    rrect(s,L,y+6,w,rowH-14,d.v<0?"var(--bad)":color,3);
+    txt(s,L+w+7,y+rowH/2+4,money(d.v),{anchor:"start",size:12,fill:"var(--ink)",weight:700,tab:true});
+  });
+  return s;
+}
+
+// ---------- Company section ----------
+function renderCompany(){
+  const root=$("#company"); root.innerHTML="";
+
+  // derived numbers
+  const cardTotal = MONTHLY.reduce((a,d)=>a+d.card,0);
+  const last = MONTHLY[MONTHLY.length-1], prev = MONTHLY[MONTHLY.length-2];
+  const rev = d => d.card + d.cash;
+  const revLast = rev(last), revPrev = rev(prev);
+  const revDelta = revPrev ? Math.round((revLast-revPrev)/revPrev*100) : 0;
+  const fixed = FIXED_COSTS.reduce((a,d)=>a+d.amount,0);
+  const slotProfit = SLOTS.reduce((a,d)=>a+d.profit,0);
+  const unitsMo = SLOTS.reduce((a,d)=>a+d.sold,0);
+
+  // aggregate slots -> products
+  const byProduct = {};
+  SLOTS.forEach(d=>{ byProduct[d.item]=(byProduct[d.item]||0)+d.profit; });
+  const prods = Object.entries(byProduct).map(([k,v])=>({k,v})).sort((a,b)=>b.v-a.v);
+  const top = prods.slice(0,8);
+  const losers = prods.filter(p=>p.v<0).sort((a,b)=>a.v-b.v);
+
+  // --- tiles ---
+  root.appendChild(el(`<h2>Snapshot</h2>`));
+  const tiles=el(`<div class="tiles"></div>`);
+  tiles.appendChild(el(`<div class="tile"><div class="k">Revenue · ${last.m}</div><div class="v">${money(revLast)}</div><div class="d ${revDelta>=0?'up':'down'}">${revDelta>=0?'▲':'▼'} ${Math.abs(revDelta)}% vs ${prev.m}</div></div>`));
+  tiles.appendChild(el(`<div class="tile"><div class="k">Cash on hand</div><div class="v">${money(last.balance)}</div><div class="d" style="color:var(--muted)">bank balance</div></div>`));
+  tiles.appendChild(el(`<div class="tile"><div class="k">Fixed costs / mo</div><div class="v">${money(fixed)}</div><div class="d ${fixed>250?'down':''}">QuickBooks climbing</div></div>`));
+  tiles.appendChild(el(`<div class="tile"><div class="k">Meals machine margin</div><div class="v">${money(slotProfit)}</div><div class="d" style="color:var(--muted)">${unitsMo} units · window</div></div>`));
+  root.appendChild(tiles);
+
+  // --- revenue trend ---
+  const revCard=el(`<div class="card"><div class="ct">Revenue trend</div><div class="cs">Card + cash deposits per month · ${MONTHLY[2].m}–${last.m}</div></div>`);
+  revCard.appendChild(lineChart(MONTHLY.slice(2).map(d=>({m:d.m,v:rev(d)})), {color:"var(--s1)"}));
+  root.appendChild(revCard);
+
+  // --- money in vs out (last 12) ---
+  const io=MONTHLY.slice(-12).map(d=>({m:d.m,in:rev(d),out:d.debits}));
+  const ioCard=el(`<div class="card"><div class="ct">Money in vs out</div><div class="cs">Last 12 months</div></div>`);
+  ioCard.appendChild(inOutChart(io));
+  ioCard.appendChild(el(`<div class="legend"><span><i style="background:var(--s3)"></i>In (sales)</span><span><i style="background:var(--s2)"></i>Out (spend)</span></div>`));
+  root.appendChild(ioCard);
+
+  // --- top earners ---
+  root.appendChild(el(`<h2>What's making money</h2>`));
+  const teCard=el(`<div class="card"><div class="ct">Top earners</div><div class="cs">Gross margin $ · Meals & Drinks · ${WINDOW_LABEL}</div></div>`);
+  teCard.appendChild(hbars(top));
+  root.appendChild(teCard);
+
+  // --- losers ---
+  const loCard=el(`<div class="card"><div class="ct">Losing money right now <span class="pill bad">fix</span></div><div class="cs">Priced below cost — every sale loses</div></div>`);
+  const lr=el(`<div class="rows"></div>`);
+  losers.forEach(p=>{
+    const s=SLOTS.find(x=>x.item===p.k);
+    lr.appendChild(el(`<div class="row"><div class="nm">${p.k}<div class="mt">costs ${money2(s.cost)} · sells ${money2(s.price)}</div></div><div class="val down">${money2(p.v)}</div></div>`));
+  });
+  loCard.appendChild(lr);
+  root.appendChild(loCard);
+
+  // --- fixed costs ---
+  root.appendChild(el(`<h2>Where the money goes</h2>`));
+  const fcCard=el(`<div class="card"><div class="ct">Fixed monthly costs</div><div class="cs">Same every month, before any product</div></div>`);
+  const fr=el(`<div class="rows"></div>`);
+  FIXED_COSTS.forEach(c=>{
+    fr.appendChild(el(`<div class="row"><div class="nm">${c.name}${c.note?`<div class="mt">${c.note}</div>`:""}</div><div class="val">${money2(c.amount)}</div></div>`));
+  });
+  fr.appendChild(el(`<div class="row"><div class="nm" style="font-weight:700">Total</div><div class="val">${money2(fixed)}</div></div>`));
+  fcCard.appendChild(fr);
+  root.appendChild(fcCard);
+}
+
+// ---------- Runs section ----------
+function renderRuns(){
+  const root=$("#runs"); root.innerHTML="";
+  root.appendChild(el(`<h2>Service a machine</h2>`));
+
+  const pick=el(`<div class="field"><label>Machine</label><select id="mpick"></select></div>`);
+  const sel=pick.querySelector("select");
+  MACHINES.forEach(m=>sel.appendChild(el(`<option value="${m.id}">${m.name} — refilled ${m.lastRefill}</option>`)));
+  root.appendChild(pick);
+
+  root.appendChild(el(`<div class="note">Enter how many you brought vs how many actually went in ("filled to par"). Anything short tells the system the machine holds less than it thinks.</div>`));
+
+  root.appendChild(el(`<h2 style="margin-top:22px">Par gaps <span style="text-transform:none;letter-spacing:0;color:var(--muted);font-weight:400">— only fill the short ones</span></h2>`));
+
+  // Build a par-gap list from the Meals machine slots (unique by slot number sans letter suffix)
+  const seen=new Set(); const list=el(`<div class="parlist"></div>`);
+  SLOTS.forEach(sl=>{
+    const base=sl.slot.replace(/[a-z]/,"");
+    if(seen.has(base)) return; seen.add(base);
+    list.appendChild(el(`<div class="par"><div class="sl">${base}</div><div class="pi">${sl.item}</div><input type="text" inputmode="numeric" placeholder="par" data-slot="${base}" data-item="${sl.item}"></div>`));
+  });
+  root.appendChild(list);
+
+  const gen=el(`<button class="btn">Generate buy list →</button>`);
+  const out=el(`<div id="buyout"></div>`);
+  gen.onclick=()=>buildBuyList(sel,list,out,gen);
+  root.appendChild(gen);
+  root.appendChild(out);
+}
+
+async function buildBuyList(sel, list, out, gen){
+  const shorts=[...list.querySelectorAll("input")].map(i=>({slot:i.dataset.slot,item:i.dataset.item,par:parseInt(i.value,10)})).filter(x=>!isNaN(x.par)&&x.par>0);
+  const machine = sel.options[sel.selectedIndex]?.textContent.split(" — ")[0] || "unknown";
+  out.innerHTML="";
+  if(!shorts.length){ out.appendChild(el(`<div class="empty">No gaps entered — machine reported full. Nothing to buy.</div>`)); return; }
+  try{ localStorage.setItem("tv_lastrun", JSON.stringify({at:Date.now(),machine,shorts})); }catch(e){}
+
+  gen.disabled=true; gen.textContent="Thinking…";
+  let res, body;
+  try{
+    res = await fetch("/api/generate",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({machine,shorts})});
+    body = await res.json();
+  }catch(e){
+    gen.disabled=false; gen.textContent="Generate buy list →";
+    return renderLocalList(out, shorts, "Couldn't reach the server. Showing your raw counts.");
+  }
+  gen.disabled=false; gen.textContent="Generate buy list →";
+
+  if(res.status===503 || body.error==="no_key"){
+    return renderLocalList(out, shorts, body.message || "The brain isn't connected yet.");
+  }
+  if(!res.ok || body.error){
+    return renderLocalList(out, shorts, body.message || "The brain hit an error.");
+  }
+  renderBrain(out, body);
+}
+
+// Raw fallback: just the counts entered, shown clearly, with why the brain didn't run.
+function renderLocalList(out, shorts, why){
+  out.appendChild(el(`<h2 style="margin-top:24px">Your counts <span class="pill warn">${shorts.length}</span></h2>`));
+  const c=el(`<div class="card buy"><div class="ct">Reported par gaps</div><div class="cs">Saved on your phone</div></div>`);
+  const rows=el(`<div class="rows"></div>`);
+  shorts.forEach(x=>rows.appendChild(el(`<div class="row"><div class="nm">${x.item}<div class="mt">slot ${x.slot}</div></div><div class="val">${x.par}</div></div>`)));
+  c.appendChild(rows); out.appendChild(c);
+  out.appendChild(el(`<div class="note">${why} Once it is, this becomes a real buy list in cases with reconciliation and change orders.</div>`));
+}
+
+// Full brain result: summary, reconciliation, buy list in cases, change orders.
+function renderBrain(out, b){
+  if(b.summary) out.appendChild(el(`<div class="note" style="border-left-color:var(--good);margin-top:24px">${b.summary}</div>`));
+
+  if(b.buyList && b.buyList.length){
+    out.appendChild(el(`<h2>Buy list <span class="pill warn">${b.buyList.length}</span></h2>`));
+    const c=el(`<div class="card buy"><div class="ct">Bring to next refill</div><div class="cs">Whole cases · Sam's links attach when the catalog is wired</div></div>`);
+    const rows=el(`<div class="rows"></div>`);
+    b.buyList.forEach(x=>rows.appendChild(el(`<div class="row"><div class="nm">${x.item}<div class="mt">slot ${x.slot} · ${x.reason||""}</div></div><div class="val">${x.cases}× case${x.cases===1?"":"s"}</div></div>`)));
+    c.appendChild(rows); out.appendChild(c);
+  }
+
+  if(b.changeOrders && b.changeOrders.length){
+    out.appendChild(el(`<h2>Change orders <span class="pill warn">${b.changeOrders.length}</span></h2>`));
+    const c=el(`<div class="card"><div class="ct">Worth doing this cycle</div><div class="cs">Pricing, planogram, and par moves</div></div>`);
+    const rows=el(`<div class="rows"></div>`);
+    b.changeOrders.forEach(x=>rows.appendChild(el(`<div class="row"><div class="nm">${x.item}<div class="mt">slot ${x.slot} · ${x.type} · ${x.reason||""}</div></div><div class="val">${x.from} → ${x.to}</div></div>`)));
+    c.appendChild(rows); out.appendChild(c);
+  }
+
+  if(b.reconciliation) out.appendChild(el(`<div class="note">${b.reconciliation}</div>`));
+}
+
+// ---------- boot ----------
+renderCompany();
+renderRuns();

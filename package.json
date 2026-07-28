@@ -1,0 +1,19 @@
+{
+  "name": "tribal-vend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Tribal Amenities vending operations app — runs, live numbers, the brain.",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.68.0",
+    "dotenv": "^17.0.0",
+    "express": "^5.0.0"
+  }
+}
