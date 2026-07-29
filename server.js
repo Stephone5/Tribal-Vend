@@ -8,6 +8,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { runBrain } from "./brain.js";
 import { writeOnHand } from "./airvend.js";
+import { getDoc, setDoc, storeReady } from "./store.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -17,8 +18,32 @@ app.get("/api/health", (_req, res) => {
   res.json({
     ok: true,
     brainReady: !!process.env.ANTHROPIC_API_KEY,
-    airvendReady: !!(process.env.AIRVEND_USER && process.env.AIRVEND_PASS)
+    airvendReady: !!(process.env.AIRVEND_USER && process.env.AIRVEND_PASS),
+    storeReady: storeReady(),
+    locked: !!process.env.APP_PASSCODE
   });
+});
+
+// Passcode gate. Everything under /api (except /api/health) requires the
+// X-Passcode header to match APP_PASSCODE. If APP_PASSCODE isn't set, the app
+// runs open (fine for local dev; set it in production).
+app.use((req, res, next) => {
+  if (!req.path.startsWith("/api/") || req.path === "/api/health") return next();
+  const pass = process.env.APP_PASSCODE;
+  if (!pass) return next();
+  if ((req.get("X-Passcode") || "") === pass) return next();
+  res.status(401).json({ error: "unauthorized", message: "Locked." });
+});
+
+// Closet (inventory) — durable, synced across devices.
+const CLOSET_KEY = "closet:default";
+app.get("/api/closet", async (_req, res) => {
+  try { res.json((await getDoc(CLOSET_KEY)) || { items: [], hist: [] }); }
+  catch (err) { res.status(502).json({ error: "store_failed", message: err?.message || "Storage read failed." }); }
+});
+app.put("/api/closet", async (req, res) => {
+  try { await setDoc(CLOSET_KEY, req.body || { items: [], hist: [] }); res.json({ ok: true }); }
+  catch (err) { res.status(502).json({ error: "store_failed", message: err?.message || "Storage write failed." }); }
 });
 
 app.post("/api/generate", async (req, res) => {

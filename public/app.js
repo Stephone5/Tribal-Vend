@@ -1,5 +1,6 @@
 import { MONTHLY, FIXED_COSTS, SLOTS, WINDOW_LABEL, MACHINES } from "./data.js";
 import { renderCloset } from "./closet.js";
+import { apiFetch, setPass } from "./api.js";
 
 const $ = (s, r=document) => r.querySelector(s);
 const money = n => (n<0?"-$":"$") + Math.abs(n).toLocaleString("en-US",{maximumFractionDigits:0});
@@ -197,7 +198,7 @@ async function buildBuyList(sel, list, out, gen){
   gen.disabled=true; gen.textContent="Thinking…";
   let res, body;
   try{
-    res = await fetch("/api/generate",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({machine,shorts})});
+    res = await apiFetch("/api/generate",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({machine,shorts})});
     body = await res.json();
   }catch(e){
     gen.disabled=false; gen.textContent="Generate buy list →";
@@ -262,7 +263,7 @@ function renderAirvendSync(out, ctx){
     btn.disabled=true; btn.textContent="Checking AirVend…"; area.innerHTML="";
     let res, body;
     try{
-      res=await fetch("/api/airvend/preview",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({machineId:ctx.machineId,gaps:ctx.gaps})});
+      res=await apiFetch("/api/airvend/preview",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({machineId:ctx.machineId,gaps:ctx.gaps})});
       body=await res.json();
     }catch(e){ btn.disabled=false; btn.textContent="Preview the update →"; area.appendChild(el(`<div class="note">Couldn't reach the server.</div>`)); return; }
     btn.disabled=false; btn.textContent="Preview the update →";
@@ -284,7 +285,7 @@ function renderAirvendPlan(area, ctx, plan){
     confirm.disabled=true; confirm.textContent="Writing to AirVend…";
     let res, body;
     try{
-      res=await fetch("/api/airvend/write",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({machineId:ctx.machineId,gaps:ctx.gaps})});
+      res=await apiFetch("/api/airvend/write",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({machineId:ctx.machineId,gaps:ctx.gaps})});
       body=await res.json();
     }catch(e){ confirm.disabled=false; confirm.textContent="Confirm & write to AirVend"; area.appendChild(el(`<div class="note">Couldn't reach the server.</div>`)); return; }
     if(!res.ok||body.error){ confirm.disabled=false; confirm.textContent="Confirm & write to AirVend"; area.appendChild(el(`<div class="note">${body.message||"AirVend rejected the update. Nothing was changed."}</div>`)); return; }
@@ -292,6 +293,40 @@ function renderAirvendPlan(area, ctx, plan){
   };
 }
 
+// ---------- unlock gate ----------
+async function ensureUnlocked(){
+  // Probe a locked endpoint. 401 → need a passcode. Anything else → we're in.
+  let r;
+  try { r = await apiFetch("/api/closet"); } catch(e){ return; } // offline → let cached UI load
+  if (r.status !== 401) return;
+  await new Promise(resolve=>{
+    const ov = el(`<div style="position:fixed;inset:0;z-index:100;background:var(--plane);display:flex;align-items:center;justify-content:center;padding:24px">
+      <div style="width:100%;max-width:340px;text-align:center">
+        <div style="font-size:20px;font-weight:800;margin-bottom:6px">Tribal Vend</div>
+        <div style="color:var(--muted);font-size:13px;margin-bottom:18px">Enter your passcode</div>
+        <input id="pc" type="password" inputmode="numeric" style="width:100%;background:var(--surface-2);border:1px solid var(--border);color:var(--ink);border-radius:12px;padding:14px;font-size:18px;text-align:center" placeholder="••••">
+        <div id="pcerr" style="color:var(--bad);font-size:12px;height:16px;margin-top:8px"></div>
+        <button id="pcgo" class="btn" style="margin-top:6px">Unlock</button>
+      </div></div>`);
+    document.body.appendChild(ov);
+    const inp=ov.querySelector("#pc"), err=ov.querySelector("#pcerr"), go=ov.querySelector("#pcgo");
+    inp.focus();
+    const tryIt=async()=>{
+      setPass(inp.value.trim());
+      go.disabled=true; go.textContent="Checking…"; err.textContent="";
+      let rr;
+      try{ rr=await apiFetch("/api/closet"); }catch(e){ err.textContent="Can't reach the server."; go.disabled=false; go.textContent="Unlock"; return; }
+      if(rr.status===401){ err.textContent="Wrong passcode."; go.disabled=false; go.textContent="Unlock"; inp.select(); return; }
+      ov.remove(); resolve();
+    };
+    go.onclick=tryIt;
+    inp.onkeydown=(e)=>{ if(e.key==="Enter") tryIt(); };
+  });
+}
+
 // ---------- boot ----------
-renderCompany();
-renderRuns();
+(async ()=>{
+  await ensureUnlocked();
+  renderCompany();
+  renderRuns();
+})();

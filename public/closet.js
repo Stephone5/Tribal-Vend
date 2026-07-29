@@ -3,6 +3,8 @@
 // unit price, total value, a change history, and rollups. Stored on the phone
 // (localStorage); export/import gives you a backup file so nothing's ever stuck.
 
+import { apiFetch } from "./api.js";
+
 const FOLDERS = ["Snacks", "Candy", "Cold Food", "Drinks"];
 const LSK = "tv_closet_v1";
 
@@ -11,12 +13,43 @@ const elc = (h) => { const t=document.createElement("template"); t.innerHTML=h.t
 const uid = () => "i" + Math.random().toString(36).slice(2, 9);
 const usd = n => "$" + (Number(n)||0).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});
 
-function load(){ try { return JSON.parse(localStorage.getItem(LSK)) || {items:[],hist:[]}; } catch { return {items:[],hist:[]}; } }
-function save(d){ try { localStorage.setItem(LSK, JSON.stringify(d)); } catch(e){ alert("Storage full — try smaller images or export a backup."); } }
+// STATE is the working copy. The server is the source of truth (synced across
+// devices); localStorage is an offline cache so the app works with no signal.
+let STATE = { items: [], hist: [] };
+let saveTimer = null;
+
+function load(){ return STATE; }
+function save(d){
+  STATE = d;
+  try { localStorage.setItem(LSK, JSON.stringify(STATE)); } catch(e){}
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    apiFetch("/api/closet", { method:"PUT", headers:{"Content-Type":"application/json"}, body: JSON.stringify(STATE) }).catch(()=>{});
+  }, 600);
+}
+async function pull(){
+  let cached = null;
+  try { cached = JSON.parse(localStorage.getItem(LSK)); } catch {}
+  try {
+    const r = await apiFetch("/api/closet");
+    if (r.ok) {
+      const server = await r.json();
+      // Safety: if the server came back empty but this device has data, keep the
+      // device's copy and push it back up — a server hiccup can't erase your closet.
+      if ((!server.items || !server.items.length) && cached && cached.items && cached.items.length) {
+        STATE = cached; save(STATE); return;
+      }
+      STATE = server; try { localStorage.setItem(LSK, JSON.stringify(STATE)); } catch(e){} return;
+    }
+  } catch(e){}
+  STATE = cached || {items:[],hist:[]};
+}
 
 // Expose current closet for the brain (buy lists subtract what you already own).
 export function closetSnapshot(){
-  return load().items.map(i => ({ name:i.name, folder:i.folder, qty:Number(i.qty)||0, price:Number(i.price)||0 }));
+  let s = STATE;
+  if (!s.items || !s.items.length) { try { s = JSON.parse(localStorage.getItem(LSK)) || {items:[]}; } catch {} }
+  return (s.items||[]).map(i => ({ name:i.name, folder:i.folder, qty:Number(i.qty)||0, price:Number(i.price)||0 }));
 }
 
 let injected = false;
@@ -73,9 +106,11 @@ function toThumb(file){
 }
 
 let ROOT=null;
-export function renderCloset(rootEl){
+export async function renderCloset(rootEl){
   injectStyles();
   ROOT = rootEl;
+  ROOT.innerHTML = `<h2>Closet</h2><div class="empty">Loading…</div>`;
+  await pull();
   paint();
 }
 
