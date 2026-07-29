@@ -156,6 +156,43 @@
   if ("serviceWorker" in navigator) {
     window.addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(()=>{}));
   }
+
+  // Safety net: if the app fails to start for any reason, show a real message
+  // with a one-tap repair instead of a silent white screen.
+  function tvFail(detail){
+    if (document.getElementById("tv-fail")) return;
+    var d = document.createElement("div");
+    d.id = "tv-fail";
+    d.style.cssText = "position:fixed;inset:0;z-index:999;background:#fff;color:#111;display:flex;align-items:center;justify-content:center;padding:24px;font-family:system-ui,-apple-system,'Segoe UI',sans-serif";
+    d.innerHTML =
+      '<div style="max-width:340px;text-align:center">' +
+      '<div style="font-size:19px;font-weight:800;margin-bottom:6px">Tribal Vend needs a refresh</div>' +
+      '<div style="color:#555;font-size:13px;line-height:1.5;margin-bottom:16px">The app got a stale copy of itself. Tap below to clear it and reload — nothing is lost.</div>' +
+      '<button id="tv-fix" style="width:100%;background:#1f6feb;color:#fff;border:0;border-radius:14px;padding:15px;font-size:16px;font-weight:800">Repair &amp; reload</button>' +
+      '<div style="color:#999;font-size:11px;margin-top:14px;word-break:break-word">' + (detail || "") + '</div>' +
+      '</div>';
+    document.body.appendChild(d);
+    document.getElementById("tv-fix").onclick = async function(){
+      try {
+        if (window.caches) { var ks = await caches.keys(); await Promise.all(ks.map(function(k){ return caches.delete(k); })); }
+        if (navigator.serviceWorker) { var rs = await navigator.serviceWorker.getRegistrations(); await Promise.all(rs.map(function(r){ return r.unregister(); })); }
+      } catch(e){}
+      location.reload(true);
+    };
+  }
+  window.addEventListener("error", function(e){
+    if (e && e.target && (e.target.tagName === "SCRIPT" || e.target.tagName === "LINK")) tvFail("Couldn't load " + (e.target.src || e.target.href || "a file"));
+    else if (e && e.message) tvFail(e.message);
+  }, true);
+  window.addEventListener("unhandledrejection", function(e){ tvFail(e && e.reason ? String(e.reason).slice(0,140) : "Startup failed"); });
+  // If nothing has rendered after 8s, treat it as a failed start.
+  window.addEventListener("load", function(){
+    setTimeout(function(){
+      var c = document.getElementById("company");
+      var painted = (c && c.innerHTML.trim().length > 0) || document.getElementById("pc") || document.getElementById("tv-fail");
+      if (!painted) tvFail("The app didn't finish starting.");
+    }, 8000);
+  });
 </script>
 </body>
 </html>
