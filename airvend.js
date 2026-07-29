@@ -104,6 +104,50 @@ export async function getForm(cookie, machineId) {
   return { fields, slots };
 }
 
+// Read the live planogram (product + price + capacity) for a machine.
+export async function getPlanogram(cookie, machineId) {
+  const res = await fetch(`${BASE}/Planogram/Edit/?id=${encodeURIComponent(machineId)}&state=Current`, {
+    headers: { Cookie: cookie }, redirect: "manual"
+  });
+  const html = await res.text();
+  const $ = cheerio.load(html);
+  const f = {};
+  $("input, select").each((_, el) => {
+    const name = $(el).attr("name"); if (!name) return;
+    f[name] = $(el).attr("value") ?? "";
+  });
+  const out = [];
+  for (const name of Object.keys(f)) {
+    const m = name.match(/^(Trays\[\d+\]\.Slots\[\d+\])\.Key$/);
+    if (!m) continue;
+    const p = m[1];
+    out.push({
+      slot: String(f[`${p}.Key`] ?? ""),
+      price: Number(f[`${p}.Price`] ?? 0),
+      product: f[`${p}.ProductName`] ?? "",
+    });
+  }
+  return out;
+}
+
+// Combined live view: product name + on-hand + capacity (from the quantities
+// form) merged with price (from the planogram page).
+export async function getMachineLive(machineId) {
+  const cookie = await login();
+  const [{ slots }, plano] = await Promise.all([
+    getForm(cookie, machineId),
+    getPlanogram(cookie, machineId),
+  ]);
+  const priceBySlot = Object.fromEntries(plano.map(p => [p.slot, p.price]));
+  return slots.map(s => ({
+    slot: s.key,
+    product: s.product,
+    onHand: s.onHand,
+    max: s.max,
+    price: priceBySlot[s.key] ?? 0,
+  }));
+}
+
 // Set each slot's true on-hand count and post it back.
 // missingBySlot: { "<slotKey>": unitsMissing }. For a listed slot, on-hand = par − missing.
 // Every slot NOT listed is assumed full to par (its MaxCapacity).
