@@ -1,4 +1,5 @@
 import { MONTHLY, FIXED_COSTS, SLOTS, WINDOW_LABEL, MACHINES } from "./data.js";
+import { renderCloset } from "./closet.js";
 
 const $ = (s, r=document) => r.querySelector(s);
 const money = n => (n<0?"-$":"$") + Math.abs(n).toLocaleString("en-US",{maximumFractionDigits:0});
@@ -13,6 +14,8 @@ document.querySelectorAll("nav button").forEach(b=>{
     const tab=b.dataset.tab;
     $("#company").hidden = tab!=="company";
     $("#runs").hidden = tab!=="runs";
+    $("#closet").hidden = tab!=="closet";
+    if(tab==="closet") renderCloset($("#closet"));
     window.scrollTo(0,0);
   };
 });
