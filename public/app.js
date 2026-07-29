@@ -1,4 +1,4 @@
-import { MONTHLY, FIXED_COSTS, SLOTS, WINDOW_LABEL, MACHINES } from "./data.js";
+import { MONTHLY, FIXED_COSTS, SLOTS, WINDOW_LABEL, MACHINES, LOAN } from "./data.js";
 import { renderCloset } from "./closet.js";
 import { apiFetch, setPass } from "./api.js";
 
@@ -146,6 +146,19 @@ function renderCompany(){
   });
   loCard.appendChild(lr);
   root.appendChild(loCard);
+
+  // --- loan ---
+  root.appendChild(el(`<h2>Loan</h2>`));
+  const pct = Math.round(LOAN.principalPaid / LOAN.principal * 100);
+  const lc = el(`<div class="card"><div class="ct">${LOAN.name} — ${money(LOAN.balance)} left</div><div class="cs">$${LOAN.principal.toLocaleString()} at ${(LOAN.apr*100).toFixed(0)}% · ${money2(LOAN.payment)}/mo · started ${LOAN.started}</div></div>`);
+  lc.appendChild(el(`<div style="height:8px;border-radius:99px;background:var(--surface-2);overflow:hidden;margin:2px 2px 12px"><div style="height:100%;width:${pct}%;background:var(--good)"></div></div>`));
+  const loanRows = el(`<div class="rows"></div>`);
+  loanRows.appendChild(el(`<div class="row"><div class="nm">Paid off<div class="mt">${money(LOAN.principalPaid)} of ${money(LOAN.principal)} principal</div></div><div class="val">${pct}%</div></div>`));
+  loanRows.appendChild(el(`<div class="row"><div class="nm">Left to pay<div class="mt">as of ${LOAN.asOf}</div></div><div class="val">${money(LOAN.balance)}</div></div>`));
+  loanRows.appendChild(el(`<div class="row"><div class="nm">Time left<div class="mt">at ${money2(LOAN.payment)}/mo</div></div><div class="val">~${Math.round(LOAN.monthsLeft/12)} yrs · ${LOAN.payoff}</div></div>`));
+  loanRows.appendChild(el(`<div class="row"><div class="nm">Interest still owed<div class="mt">if paid at minimum</div></div><div class="val">${money(LOAN.remainingInterest)}</div></div>`));
+  lc.appendChild(loanRows);
+  root.appendChild(lc);
 
   // --- fixed costs ---
   root.appendChild(el(`<h2>Where the money goes</h2>`));
