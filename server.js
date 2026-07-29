@@ -10,6 +10,7 @@ import { runBrain } from "./brain.js";
 import { writeOnHand, getMachineLive } from "./airvend.js";
 import { costFor, categoryFor, SOLD_BY_SLOT, SALES_WINDOW, MONTHLY, FIXED_COSTS, buildPL } from "./catalog.js";
 import { CLOSET_SEED } from "./closet-seed.js";
+import { pullSales, summarize, startOfWeek, easternNow } from "./sales.js";
 import { getDoc, setDoc, storeReady } from "./store.js";
 import { SLOTS, LOAN, WINDOW_LABEL } from "./finance.js";
 
@@ -49,39 +50,88 @@ const MACHINES = [
   { id: "69157", name: "Meals & Drinks" },
   { id: "69180", name: "Snacks & Candy" },
 ];
-let liveCache = { at: 0, data: null };
+// Inventory refreshes every 10 minutes (well inside the half-hour you asked for);
+// sales every 15. Both refresh on demand with ?refresh=1.
+const INV_TTL = 10 * 60 * 1000;
+const SALES_TTL = 15 * 60 * 1000;
+const SALES_LOOKBACK_DAYS = 120;
 
-async function buildLive() {
+let liveCache = { at: 0, data: null };
+let salesCache = { at: 0, sum: null };
+
+async function getSales(force = false) {
+  if (!force && salesCache.sum && Date.now() - salesCache.at < SALES_TTL) return salesCache.sum;
+  const end = new Date();
+  const start = new Date(Date.now() - SALES_LOOKBACK_DAYS * 864e5);
+  const txns = await pullSales(start, end);
+  const sum = summarize(txns, costFor);
+  salesCache = { at: Date.now(), sum };
+  return sum;
+}
+
+async function buildLive(force = false) {
+  // Live sales — falls back to the last good pull if AirVend's report engine hiccups.
+  let sales = null;
+  try { sales = await getSales(force); } catch (e) { sales = salesCache.sum; }
+
+  const soldBySlot = {};
+  if (sales) for (const s of sales.bySlot) {
+    const mid = MACHINES.find(m => m.name === s.machine)?.id;
+    if (!mid) continue;
+    (soldBySlot[mid] ||= {})[s.slot] = s;
+  }
+
+  // Real observed window: first transaction → now
+  const spanDays = sales && sales.days.length
+    ? Math.max(1, (Date.now() - new Date(sales.days[0].d).getTime()) / 864e5)
+    : SALES_WINDOW.days;
+
   const machines = [];
   for (const m of MACHINES) {
     let slots = [];
     try { slots = await getMachineLive(m.id); } catch (e) { slots = []; }
-    const sold = SOLD_BY_SLOT[m.id] || {};
+    const live = soldBySlot[m.id] || {};
+    const fallback = SOLD_BY_SLOT[m.id] || {};
     const rows = slots.map(s => {
       const cost = costFor(s.product);
-      const units = sold[s.slot] ?? 0;
+      const rec = live[s.slot];
+      const units = rec ? rec.units : (fallback[s.slot] ?? 0);
       const marginEach = cost == null ? null : s.price - cost;
+      const profit = rec ? rec.profit : (marginEach == null ? null : marginEach * units);
       return {
         slot: s.slot, product: s.product, price: s.price, cost,
         onHand: s.onHand, max: s.max, units,
+        week: rec ? rec.week : 0, prevWeek: rec ? rec.prevWeek : 0,
         category: categoryFor(s.product),
-        marginEach,
-        profit: marginEach == null ? null : marginEach * units,
-        perDay: marginEach == null ? null : (marginEach * units) / SALES_WINDOW.days,
+        marginEach, profit,
+        perDay: profit == null ? null : profit / spanDays,
         fillPct: s.max ? Math.round((s.onHand / s.max) * 100) : 0,
         belowCost: marginEach != null && marginEach <= 0,
       };
     });
     machines.push({ ...m, slots: rows });
   }
-  return { machines, window: SALES_WINDOW, monthly: MONTHLY, fixedCosts: FIXED_COSTS, pl: buildPL(), loan: LOAN, at: Date.now() };
+
+  return {
+    machines,
+    sales: sales ? {
+      thisWeek: sales.thisWeek, lastWeek: sales.lastWeek,
+      thisMonth: sales.thisMonth, lastMonth: sales.lastMonth,
+      weekStart: sales.weekStart, weeks: sales.weeks, days: sales.days,
+      byDow: sales.byDow, byHour: sales.byHour, byItem: sales.byItem.slice(0, 40),
+      txnCount: sales.txnCount, spanDays: Math.round(spanDays),
+      freshAt: salesCache.at,
+    } : null,
+    window: SALES_WINDOW, monthly: MONTHLY, fixedCosts: FIXED_COSTS,
+    pl: buildPL(), loan: LOAN, at: Date.now(),
+  };
 }
 
 app.get("/api/live", async (req, res) => {
   try {
-    const fresh = req.query.refresh === "1";
-    if (!fresh && liveCache.data && Date.now() - liveCache.at < 5 * 60 * 1000) return res.json(liveCache.data);
-    const data = await buildLive();
+    const force = req.query.refresh === "1";
+    if (!force && liveCache.data && Date.now() - liveCache.at < INV_TTL) return res.json(liveCache.data);
+    const data = await buildLive(force);
     liveCache = { at: Date.now(), data };
     res.json(data);
   } catch (err) {

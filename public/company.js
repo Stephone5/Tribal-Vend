@@ -77,6 +77,23 @@ function groupChart(rows, aKey, bKey, aColor, bColor) {
   return s;
 }
 
+// Sales by hour of day
+function hourChart(byHour) {
+  const W = 680, H = 170, L = 6, R = 6, T = 12, B = 22;
+  const s = svg(W, H);
+  const hi = niceMax(Math.max(...byHour) * 1.1);
+  const iw = W - L - R, ih = H - T - B;
+  const yf = v => T + ih - (v / (hi || 1)) * ih;
+  for (let g = 0; g <= 2; g++) { const yv = hi * g / 2; const y = yf(yv); ln(s, L, y, W - R, y, "var(--grid)"); tx(s, L, y - 4, money(yv), { anchor: "start" }); }
+  const gw = iw / 24, bw = Math.max(6, gw - 3);
+  byHour.forEach((v, h) => {
+    const busy = v >= hi * 0.5;
+    rect(s, L + h * gw + (gw - bw) / 2, yf(v), bw, ih - (yf(v) - T), busy ? "var(--s1)" : "var(--s3)", 2);
+  });
+  [0, 6, 12, 18, 23].forEach(h => tx(s, L + h * gw + gw / 2, H - 6, h === 0 ? "12a" : h === 12 ? "12p" : h > 12 ? (h - 12) + "p" : h + "a"));
+  return s;
+}
+
 function barRow(label, value, max, color, fmtv = money2) {
   const w = max > 0 ? Math.max(2, (Math.abs(value) / max) * 100) : 0;
   return el(`<div class="bar-line"><span class="lbl">${esc(label)}</span><span class="track"><span class="fill" style="width:${w}%;background:${color}"></span></span><span class="amt" style="color:${value < 0 ? "var(--bad)" : "var(--ink)"}">${fmtv(value)}</span></div>`);
@@ -102,10 +119,8 @@ export async function renderCompany(root) {
   const known = allSlots.filter(s => s.cost != null);
   const days = d.window.days;
 
-  // ---- this week so far: what's left the machines since the last fill ----
+  const S = d.sales;
   const soldSinceFill = allSlots.reduce((a, s) => a + Math.max(0, s.max - s.onHand), 0);
-  const weekMargin = allSlots.reduce((a, s) => a + (s.marginEach != null ? Math.max(0, s.max - s.onHand) * s.marginEach : 0), 0);
-  const weekRevenue = allSlots.reduce((a, s) => a + Math.max(0, s.max - s.onHand) * s.price, 0);
 
   // ---- money ----
   const pl = d.pl;
@@ -117,19 +132,58 @@ export async function renderCompany(root) {
 
   const marginPerDay = known.reduce((a, s) => a + (s.perDay || 0), 0);
 
-  // ================= HERO =================
-  root.appendChild(el(`<h2>This week so far</h2>`));
+  // ================= HERO — this week, live =================
+  const wkLabel = S ? new Date(S.weekStart).toLocaleDateString([], { month: "short", day: "numeric" }) : "";
+  const dow = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  const todayIdx = new Date().getDay();
+  const wkProfit = S ? S.thisWeek.profit : 0;
+  const wkRev = S ? S.thisWeek.revenue : 0;
+  const wkUnits = S ? S.thisWeek.units : 0;
+  // Compare like-for-like: last week only through the same weekday.
+  const lwProfit = S ? S.lastWeek.profit : 0;
+  const pace = todayIdx >= 6 ? 1 : (todayIdx + 1) / 7;
+  const lwSoFar = lwProfit * pace;
+  const wkDelta = lwSoFar > 0 ? ((wkProfit - lwSoFar) / lwSoFar) * 100 : 0;
+
+  root.appendChild(el(`<h2>This week · since Sun ${wkLabel}</h2>`));
   root.appendChild(el(`<div class="hero">
-    <div class="k">Sold since last fill</div>
-    <div class="v">${money2(weekMargin)}</div>
-    <div class="sub">profit from <b>${soldSinceFill}</b> units · ${money2(weekRevenue)} in sales</div>
+    <div class="k">Profit so far</div>
+    <div class="v">${money2(wkProfit)}</div>
+    <div class="sub">${money2(wkRev)} in sales · <b>${wkUnits}</b> units · through ${dow[todayIdx]}</div>
     <div class="chips">
-      <span class="chip">Machines<b>${d.machines.length}</b></span>
-      <span class="chip">Slots<b>${allSlots.length}</b></span>
-      <span class="chip">Empty now<b>${allSlots.filter(s => s.onHand === 0).length}</b></span>
+      <span class="chip" style="color:${wkDelta >= 0 ? "var(--good)" : "var(--bad)"}">vs last week<b style="color:inherit">${wkDelta >= 0 ? "▲" : "▼"} ${pct(wkDelta)}</b></span>
+      <span class="chip">Last week total<b>${money2(lwProfit)}</b></span>
+      <span class="chip">Empty slots<b>${allSlots.filter(s => s.onHand === 0).length}</b></span>
       <span class="chip">Avg fill<b>${Math.round(allSlots.reduce((a, s) => a + s.fillPct, 0) / allSlots.length)}%</b></span>
     </div>
   </div>`));
+
+  if (S) {
+    const mDelta = S.lastMonth.profit > 0 ? ((S.thisMonth.profit - S.lastMonth.profit) / S.lastMonth.profit) * 100 : 0;
+    const t2 = el(`<div class="tiles" style="margin-top:10px"></div>`);
+    t2.appendChild(el(`<div class="tile"><div class="k">This month</div><div class="v">${money(S.thisMonth.profit)}</div><div class="d ${mDelta >= 0 ? "up" : "down"}">${mDelta >= 0 ? "▲" : "▼"} ${pct(mDelta)} vs last month</div></div>`));
+    t2.appendChild(el(`<div class="tile"><div class="k">Units this month</div><div class="v">${S.thisMonth.units}</div><div class="d" style="color:var(--muted)">${S.lastMonth.units} last month</div></div>`));
+    root.appendChild(t2);
+
+    // ---- weekly trend ----
+    const wkCard = el(`<div class="card"><div class="ct">Weekly profit</div><div class="cs">Every week Sunday → Saturday · current week still filling in</div></div>`);
+    wkCard.appendChild(barChart(S.weeks.slice(-14).map(w => ({
+      m: new Date(w.w).toLocaleDateString([], { month: "numeric", day: "numeric" }),
+      v: Math.round(w.profit)
+    })), { fmt: money }));
+    root.appendChild(wkCard);
+
+    // ---- day of week ----
+    const dowMax = Math.max(...S.byDow);
+    const dowCard = el(`<div class="card"><div class="ct">Best days to be stocked</div><div class="cs">Total sales by weekday, last ${S.spanDays} days</div></div>`);
+    S.byDow.forEach((v, i) => dowCard.appendChild(barRow(dow[i], v, dowMax, i === 0 || i === 6 ? "var(--s4)" : "var(--s1)", money)));
+    root.appendChild(dowCard);
+
+    // ---- hour of day ----
+    const hrCard = el(`<div class="card"><div class="ct">When people buy</div><div class="cs">Sales by hour of day</div></div>`);
+    hrCard.appendChild(hourChart(S.byHour));
+    root.appendChild(hrCard);
+  }
 
   // ================= KPI TILES =================
   root.appendChild(el(`<h2>Month at a glance · ${last.m}</h2>`));
@@ -178,9 +232,24 @@ export async function renderCompany(root) {
   });
   const prods = Object.entries(byProd).map(([k, v]) => ({ k, ...v })).sort((a, b) => b.perDay - a.perDay);
   const topP = prods.slice(0, 10), maxPD = Math.max(...topP.map(p => p.perDay));
-  const topCard = el(`<div class="card"><div class="ct">Top earners</div><div class="cs">Profit per day, ${d.window.label} — the number that matters</div></div>`);
+  const spanTxt = S ? `last ${S.spanDays} days of real sales` : d.window.label;
+  const topCard = el(`<div class="card"><div class="ct">Top earners</div><div class="cs">Profit per day, ${spanTxt} — the number that matters</div></div>`);
   topP.forEach(p => topCard.appendChild(barRow(p.k, p.perDay, maxPD, "var(--s1)", v => "$" + v.toFixed(2) + "/d")));
   root.appendChild(topCard);
+
+  // ---- movers: this week vs last week, per product ----
+  if (S && S.byItem.length) {
+    const movers = S.byItem
+      .filter(i => (i.week + i.prevWeek) >= 3)
+      .map(i => ({ k: shortName(i.item), week: i.week, prev: i.prevWeek, delta: i.week - i.prevWeek }))
+      .sort((a, b) => b.delta - a.delta);
+    const up = movers.slice(0, 5), down = movers.slice(-5).reverse().filter(m => m.delta < 0);
+    const mv = el(`<div class="card"><div class="ct">Movers this week</div><div class="cs">Units sold vs the same point last week</div></div>`);
+    const rws = el(`<div class="rows"></div>`);
+    [...up, ...down].forEach(m => rws.appendChild(el(
+      `<div class="row"><div class="nm">${esc(m.k)}<div class="mt">${m.week} this week · ${m.prev} last week</div></div><div class="val ${m.delta >= 0 ? "up" : "down"}">${m.delta >= 0 ? "▲" : "▼"} ${Math.abs(m.delta)}</div></div>`)));
+    mv.appendChild(rws); root.appendChild(mv);
+  }
 
   const worst = prods.filter(p => p.units > 0).slice(-6).reverse();
   const lowCard = el(`<div class="card"><div class="ct">Weakest slots</div><div class="cs">Lowest profit per day — candidates to replace</div></div>`);
@@ -246,5 +315,14 @@ export async function renderCompany(root) {
   const breakeven = fixed / (1 - 0.52);
   root.appendChild(el(`<div class="alert" style="border-left-color:var(--accent)"><b>Break-even is ${money(breakeven)}/month</b> in sales. Last month you did ${money(last.revenue)} — ${last.revenue >= breakeven ? `${money(last.revenue - breakeven)} above it.` : `${money(breakeven - last.revenue)} short.`}</div>`));
 
-  root.appendChild(el(`<div style="text-align:center;color:var(--muted);font-size:11px;margin-top:18px">Live from AirVend · updated ${new Date(d.at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</div>`));
+  const foot = el(`<div style="text-align:center;color:var(--muted);font-size:11px;margin-top:18px">
+    Live from AirVend · stock ${new Date(d.at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}${S ? ` · sales ${new Date(S.freshAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })} · ${S.txnCount.toLocaleString()} transactions` : ""}
+    <div style="margin-top:8px"><button id="refreshNow" class="chip" style="cursor:pointer;border:1px solid var(--border)">Refresh now</button></div>
+  </div>`);
+  root.appendChild(foot);
+  foot.querySelector("#refreshNow").onclick = async (e) => {
+    e.target.textContent = "Refreshing…"; e.target.disabled = true;
+    try { await apiFetch("/api/live?refresh=1"); } catch (_) {}
+    renderCompany(root);
+  };
 }
