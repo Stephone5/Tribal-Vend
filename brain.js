@@ -3,7 +3,7 @@
 // environment on the server — it never reaches the phone or the browser.
 
 import Anthropic from "@anthropic-ai/sdk";
-import { SLOTS, MONTHLY, FIXED_COSTS, WINDOW_LABEL } from "./public/data.js";
+import { SLOTS, MONTHLY, FIXED_COSTS, WINDOW_LABEL } from "./finance.js";
 
 const MODEL = process.env.BRAIN_MODEL || "claude-opus-5";
 

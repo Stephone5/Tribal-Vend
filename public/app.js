@@ -1,6 +1,17 @@
-import { MONTHLY, FIXED_COSTS, SLOTS, WINDOW_LABEL, MACHINES, LOAN } from "./data.js";
+import { MACHINES } from "./data.js";
 import { renderCloset } from "./closet.js";
 import { apiFetch, setPass } from "./api.js";
+
+// Financial data loads from the server (behind the passcode), not the public bundle.
+let MONTHLY=[], FIXED_COSTS=[], SLOTS=[], LOAN=null, WINDOW_LABEL="";
+let financeLoaded=false;
+async function loadFinance(){
+  if(financeLoaded) return;
+  try{
+    const r=await apiFetch("/api/finance");
+    if(r.ok){ const f=await r.json(); MONTHLY=f.monthly||[]; FIXED_COSTS=f.fixedCosts||[]; SLOTS=f.slots||[]; LOAN=f.loan; WINDOW_LABEL=f.windowLabel||""; financeLoaded=true; }
+  }catch(e){}
+}
 
 const $ = (s, r=document) => r.querySelector(s);
 const money = n => (n<0?"-$":"$") + Math.abs(n).toLocaleString("en-US",{maximumFractionDigits:0});
@@ -92,6 +103,7 @@ function hbars(items, {color="var(--s1)", neg=false}={}){
 // ---------- Company section ----------
 function renderCompany(){
   const root=$("#company"); root.innerHTML="";
+  if(!MONTHLY.length){ root.appendChild(el(`<div class="empty">Couldn't load your numbers — check your connection and reopen.</div>`)); return; }
 
   // derived numbers
   const cardTotal = MONTHLY.reduce((a,d)=>a+d.card,0);
@@ -306,40 +318,63 @@ function renderAirvendPlan(area, ctx, plan){
   };
 }
 
-// ---------- unlock gate ----------
+// ---------- unlock gate (the #lock splash is painted first, from index.html) ----------
 async function ensureUnlocked(){
-  // Probe a locked endpoint. 401 → need a passcode. Anything else → we're in.
+  const lock = document.getElementById("lock");
   let r;
-  try { r = await apiFetch("/api/closet"); } catch(e){ return; } // offline → let cached UI load
-  if (r.status !== 401) return;
+  try { r = await apiFetch("/api/finance"); }
+  catch(e){ if(lock) lock.remove(); return; } // offline → let cached UI load
+  if (r.status !== 401){ if(lock) lock.remove(); return; } // open, or pass already valid
+
+  // Locked: reveal the passcode form and wait for the right code.
   await new Promise(resolve=>{
-    const ov = el(`<div style="position:fixed;inset:0;z-index:100;background:var(--plane);display:flex;align-items:center;justify-content:center;padding:24px">
-      <div style="width:100%;max-width:340px;text-align:center">
-        <div style="font-size:20px;font-weight:800;margin-bottom:6px">Tribal Vend</div>
-        <div style="color:var(--muted);font-size:13px;margin-bottom:18px">Enter your passcode</div>
-        <input id="pc" type="password" inputmode="numeric" style="width:100%;background:var(--surface-2);border:1px solid var(--border);color:var(--ink);border-radius:12px;padding:14px;font-size:18px;text-align:center" placeholder="••••">
-        <div id="pcerr" style="color:var(--bad);font-size:12px;height:16px;margin-top:8px"></div>
-        <button id="pcgo" class="btn" style="margin-top:6px">Unlock</button>
-      </div></div>`);
-    document.body.appendChild(ov);
-    const inp=ov.querySelector("#pc"), err=ov.querySelector("#pcerr"), go=ov.querySelector("#pcgo");
+    lock.querySelector("#lk-wait").style.display="none";
+    const form=lock.querySelector("#lockform"); form.style.display="block";
+    const inp=lock.querySelector("#pc"), err=lock.querySelector("#pcerr"), go=lock.querySelector("#pcgo");
     inp.focus();
     const tryIt=async()=>{
       setPass(inp.value.trim());
       go.disabled=true; go.textContent="Checking…"; err.textContent="";
       let rr;
-      try{ rr=await apiFetch("/api/closet"); }catch(e){ err.textContent="Can't reach the server."; go.disabled=false; go.textContent="Unlock"; return; }
+      try{ rr=await apiFetch("/api/finance"); }catch(e){ err.textContent="Can't reach the server."; go.disabled=false; go.textContent="Unlock"; return; }
       if(rr.status===401){ err.textContent="Wrong passcode."; go.disabled=false; go.textContent="Unlock"; inp.select(); return; }
-      ov.remove(); resolve();
+      lock.remove(); resolve();
     };
     go.onclick=tryIt;
     inp.onkeydown=(e)=>{ if(e.key==="Enter") tryIt(); };
   });
 }
 
+// ---------- install prompt (shown once, only when not already installed) ----------
+let deferredInstall=null;
+window.addEventListener("beforeinstallprompt", (e)=>{ e.preventDefault(); deferredInstall=e; });
+function isInstalled(){
+  return window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true;
+}
+function maybeShowInstall(){
+  if(isInstalled()) return;                              // already downloaded → never show
+  if(localStorage.getItem("tv_install_done")==="1") return;
+  const iOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+  const banner = el(`<div style="position:fixed;left:12px;right:12px;bottom:calc(84px + env(safe-area-inset-bottom));z-index:40;background:var(--surface);border:1px solid var(--border);border-radius:16px;box-shadow:0 8px 30px rgba(0,0,0,.12);padding:14px 15px">
+    <div style="font-weight:800;font-size:15px">Add Tribal Vend to your phone</div>
+    <div style="color:var(--ink-2);font-size:13px;margin-top:3px;line-height:1.45">${iOS ? `Tap the Share button, then <b>Add to Home Screen</b> — it opens full-screen like an app.` : `Install it for one-tap access and notifications.`}</div>
+    <div style="display:flex;gap:8px;margin-top:12px">
+      ${iOS ? "" : `<button id="inst-go" class="btn" style="margin:0;flex:1;padding:12px">Install</button>`}
+      <button id="inst-x" class="btn ghost" style="margin:0;flex:${iOS?"1":"0 0 auto"};padding:12px 16px">${iOS?"Got it":"Not now"}</button>
+    </div>
+  </div>`);
+  document.body.appendChild(banner);
+  const done=()=>{ localStorage.setItem("tv_install_done","1"); banner.remove(); };
+  banner.querySelector("#inst-x").onclick=done;
+  const go=banner.querySelector("#inst-go");
+  if(go) go.onclick=async()=>{ if(deferredInstall){ deferredInstall.prompt(); await deferredInstall.userChoice.catch(()=>{}); deferredInstall=null; } done(); };
+}
+
 // ---------- boot ----------
 (async ()=>{
   await ensureUnlocked();
+  await loadFinance();
   renderCompany();
   renderRuns();
+  maybeShowInstall();
 })();

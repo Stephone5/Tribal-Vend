@@ -67,7 +67,7 @@ function injectStyles(){
     .cl-mid{flex:1;min-width:0}
     .cl-mid .nm{font-size:14px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
     .cl-mid .mt{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
-    .cl-low{display:inline-block;font-size:10px;font-weight:800;color:#f7c65a;background:rgba(250,178,25,.15);padding:1px 6px;border-radius:99px;margin-left:6px}
+    .cl-low{display:inline-block;font-size:10px;font-weight:800;color:#8a6d0a;background:rgba(184,134,11,.16);padding:1px 6px;border-radius:99px;margin-left:6px}
     .cl-step{display:flex;align-items:center;gap:8px;flex:none}
     .cl-step button{width:34px;height:34px;border-radius:10px;border:1px solid var(--border);background:var(--surface-2);color:var(--ink);font-size:20px;font-weight:700;cursor:pointer;line-height:1}
     .cl-step .q{min-width:26px;text-align:center;font-weight:800;font-variant-numeric:tabular-nums}

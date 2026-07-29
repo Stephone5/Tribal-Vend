@@ -9,6 +9,7 @@ import { fileURLToPath } from "url";
 import { runBrain } from "./brain.js";
 import { writeOnHand } from "./airvend.js";
 import { getDoc, setDoc, storeReady } from "./store.js";
+import { MONTHLY, FIXED_COSTS, SLOTS, LOAN, WINDOW_LABEL } from "./finance.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -33,6 +34,11 @@ app.use((req, res, next) => {
   if (!pass) return next();
   if ((req.get("X-Passcode") || "") === pass) return next();
   res.status(401).json({ error: "unauthorized", message: "Locked." });
+});
+
+// Financial data — behind the passcode (never in the public app code).
+app.get("/api/finance", (_req, res) => {
+  res.json({ monthly: MONTHLY, fixedCosts: FIXED_COSTS, slots: SLOTS, loan: LOAN, windowLabel: WINDOW_LABEL });
 });
 
 // Closet (inventory) — durable, synced across devices.

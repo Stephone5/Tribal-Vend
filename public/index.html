@@ -3,20 +3,20 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#0d0d0d">
+<meta name="theme-color" content="#f5f4f0">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icons/icon-192.png">
 <title>Tribal Vend</title>
 <style>
   :root{
-    color-scheme: dark;
-    --plane:#0d0d0d; --surface:#1a1a19; --surface-2:#232321;
-    --ink:#ffffff; --ink-2:#c3c2b7; --muted:#898781;
-    --grid:#2c2c2a; --baseline:#383835; --border:rgba(255,255,255,.10);
-    --s1:#3987e5; --s2:#d95926; --s3:#199e70; --s4:#c98500;
-    --s5:#d55181; --s6:#008300; --s7:#9085e9; --s8:#e66767;
-    --good:#0ca30c; --bad:#d03b3b; --warn:#fab219;
-    --accent:#3987e5;
+    color-scheme: light;
+    --plane:#f5f4f0; --surface:#ffffff; --surface-2:#eeece6;
+    --ink:#0b0b0b; --ink-2:#52514e; --muted:#8a8880;
+    --grid:#e6e4dd; --baseline:#c3c2b7; --border:rgba(11,11,11,.10);
+    --s1:#2a78d6; --s2:#eb6834; --s3:#1baf7a; --s4:#eda100;
+    --s5:#e87ba4; --s6:#008300; --s7:#4a3aa7; --s8:#e34948;
+    --good:#0a8f0a; --bad:#cc2f2f; --warn:#b8860b;
+    --accent:#2a78d6;
   }
   *{box-sizing:border-box}
   html,body{margin:0;height:100%}
@@ -39,7 +39,6 @@
   h2{font-size:13px; text-transform:uppercase; letter-spacing:.08em; color:var(--muted); margin:26px 4px 10px; font-weight:700}
   h2:first-child{margin-top:6px}
 
-  /* stat tiles */
   .tiles{display:grid; grid-template-columns:1fr 1fr; gap:10px}
   .tile{background:var(--surface); border:1px solid var(--border); border-radius:16px; padding:14px 15px}
   .tile .k{color:var(--muted); font-size:12px; font-weight:600}
@@ -63,10 +62,9 @@
   .row .mt{font-size:12px; color:var(--muted)}
   .row .val{font-weight:700; font-variant-numeric:tabular-nums; font-size:14px}
 
-  /* nav */
   nav{
     position:fixed; left:0; right:0; bottom:0; z-index:10;
-    display:flex; background:rgba(20,20,19,.92); backdrop-filter:blur(12px);
+    display:flex; background:rgba(255,255,255,.92); backdrop-filter:blur(12px);
     border-top:1px solid var(--border);
     padding-bottom:env(safe-area-inset-bottom);
   }
@@ -78,7 +76,6 @@
   nav button svg{width:23px; height:23px; stroke:currentColor; fill:none; stroke-width:1.8}
   nav button.on{color:var(--accent)}
 
-  /* runs / input */
   .field{margin:14px 0}
   .field label{display:block; font-size:13px; color:var(--ink-2); font-weight:600; margin-bottom:7px}
   select,input[type=text]{
@@ -100,24 +97,42 @@
   .buy .row .val{color:var(--good)}
   .empty{color:var(--muted); font-size:13px; text-align:center; padding:26px 10px}
   .pill{display:inline-block; font-size:11px; font-weight:700; padding:3px 9px; border-radius:99px}
-  .pill.bad{background:rgba(208,59,59,.15); color:#f08b8b}
-  .pill.warn{background:rgba(250,178,25,.15); color:#f7c65a}
+  .pill.bad{background:rgba(204,47,47,.12); color:#b02a2a}
+  .pill.warn{background:rgba(184,134,11,.16); color:#8a6d0a}
+
+  /* passcode lock — first paint, covers everything */
+  #lock{position:fixed; inset:0; z-index:200; background:var(--plane); display:flex; align-items:center; justify-content:center; padding:24px}
+  #lock .lk-box{width:100%; max-width:320px; text-align:center}
+  #lock .lk-logo{font-size:22px; font-weight:800; letter-spacing:-.02em}
+  #lock .lk-sub{color:var(--muted); font-size:13px; margin:6px 0 16px}
+  #lock input{width:100%; background:var(--surface); border:1px solid var(--border); color:var(--ink); border-radius:12px; padding:14px; font-size:18px; text-align:center}
+  #lock #pcerr{color:var(--bad); font-size:12px; height:16px; margin-top:8px}
+  #lock button{width:100%; margin-top:6px; background:var(--accent); color:#fff; border:0; border-radius:14px; padding:15px; font-size:16px; font-weight:800; cursor:pointer}
 </style>
 </head>
 <body>
+
+<div id="lock">
+  <div class="lk-box">
+    <div class="lk-logo">Tribal Vend</div>
+    <div id="lk-wait" class="lk-sub">Unlocking…</div>
+    <div id="lockform" style="display:none">
+      <div class="lk-sub">Enter your passcode</div>
+      <input id="pc" type="password" inputmode="numeric" placeholder="••••" autocomplete="off">
+      <div id="pcerr"></div>
+      <button id="pcgo">Unlock</button>
+    </div>
+  </div>
+</div>
+
 <header>
   <span class="logo">Tribal Vend</span>
   <span class="sub">2 machines · State College</span>
 </header>
 
 <main>
-  <!-- ============ COMPANY (visualizations) ============ -->
   <section id="company"></section>
-
-  <!-- ============ RUNS (input) ============ -->
   <section id="runs" hidden></section>
-
-  <!-- ============ CLOSET (inventory) ============ -->
   <section id="closet" hidden></section>
 </main>
 
