@@ -1,5 +1,5 @@
 // Tribal Vend service worker — offline shell + notification display.
-const CACHE = "tv-v10";
+const CACHE = "tv-v11";
 const ASSETS = ["./","./index.html","./app.js","./data.js","./closet.js","./api.js","./manifest.webmanifest",
   "./icons/icon-192.png","./icons/icon-512.png"];
 
