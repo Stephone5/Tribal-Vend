@@ -58,10 +58,10 @@ function injectStyles(){
   document.head.appendChild(elc(`<style>
     .cl-sum{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:6px 0 4px}
     .cl-fold{margin-top:10px}
-    .cl-fh{display:flex;align-items:baseline;justify-content:space-between;padding:10px 6px 6px;border-bottom:1px solid var(--grid)}
+    .cl-fh{display:flex;align-items:baseline;justify-content:space-between;padding:10px 6px 6px;border-bottom:1px solid var(--line)}
     .cl-fh .n{font-weight:800;font-size:15px}
     .cl-fh .s{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
-    .cl-item{display:flex;align-items:center;gap:11px;padding:11px 6px;border-top:1px solid var(--grid)}
+    .cl-item{display:flex;align-items:center;gap:11px;padding:11px 6px;border-top:1px solid var(--line)}
     .cl-item:first-child{border-top:0}
     .cl-thumb{width:42px;height:42px;border-radius:10px;object-fit:cover;background:var(--surface-2);flex:none;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:18px;font-weight:800}
     .cl-mid{flex:1;min-width:0}
@@ -69,23 +69,23 @@ function injectStyles(){
     .cl-mid .mt{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
     .cl-low{display:inline-block;font-size:10px;font-weight:800;color:#8a6d0a;background:rgba(184,134,11,.16);padding:1px 6px;border-radius:99px;margin-left:6px}
     .cl-step{display:flex;align-items:center;gap:8px;flex:none}
-    .cl-step button{width:34px;height:34px;border-radius:10px;border:1px solid var(--border);background:var(--surface-2);color:var(--ink);font-size:20px;font-weight:700;cursor:pointer;line-height:1}
+    .cl-step button{width:34px;height:34px;border-radius:10px;border:1px solid var(--line);background:var(--surface-2);color:var(--ink);font-size:20px;font-weight:700;cursor:pointer;line-height:1}
     .cl-step .q{min-width:26px;text-align:center;font-weight:800;font-variant-numeric:tabular-nums}
     .cl-modal{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:50;display:flex;align-items:flex-end;justify-content:center}
     .cl-sheet{background:var(--surface);width:100%;max-width:520px;border-radius:20px 20px 0 0;padding:16px 16px calc(20px + env(safe-area-inset-bottom));max-height:92vh;overflow:auto}
     .cl-sheet h3{margin:2px 2px 12px;font-size:17px}
     .cl-seg{display:flex;flex-wrap:wrap;gap:7px;margin-top:7px}
-    .cl-seg button{flex:1;min-width:70px;padding:10px 6px;border-radius:10px;border:1px solid var(--border);background:var(--surface-2);color:var(--ink);font-weight:700;font-size:12px;cursor:pointer}
-    .cl-seg button.on{background:var(--accent);color:#fff}
+    .cl-seg button{flex:1;min-width:70px;padding:10px 6px;border-radius:10px;border:1px solid var(--line);background:var(--surface-2);color:var(--ink);font-weight:700;font-size:12px;cursor:pointer}
+    .cl-seg button.on{background:var(--char);color:#fff}
     .cl-row2{display:flex;gap:10px}
     .cl-row2 .field{flex:1}
     .cl-imgpick{display:flex;align-items:center;gap:12px;margin:12px 0 4px}
     .cl-imgpick img{width:56px;height:56px;border-radius:12px;object-fit:cover}
     .cl-del{color:#f08b8b;background:none;border:0;font-weight:700;font-size:14px;padding:10px;cursor:pointer;width:100%;margin-top:4px}
-    .cl-hist{margin-top:10px;border-top:1px solid var(--grid);padding-top:8px}
+    .cl-hist{margin-top:10px;border-top:1px solid var(--line);padding-top:8px}
     .cl-hist .h{font-size:12px;color:var(--muted);display:flex;justify-content:space-between;padding:5px 2px;font-variant-numeric:tabular-nums}
     .cl-tools{display:flex;gap:8px;margin-top:12px}
-    .cl-tools button{flex:1;padding:11px;border-radius:12px;border:1px solid var(--border);background:var(--surface-2);color:var(--ink-2);font-weight:700;font-size:12px;cursor:pointer}
+    .cl-tools button{flex:1;padding:11px;border-radius:12px;border:1px solid var(--line);background:var(--surface-2);color:var(--ink-2);font-weight:700;font-size:12px;cursor:pointer}
   </style>`));
 }
 

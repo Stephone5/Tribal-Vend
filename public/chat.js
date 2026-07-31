@@ -14,19 +14,19 @@ function injectStyles() {
     .ch-wrap{display:flex;flex-direction:column;gap:12px}
     .ch-msgs{display:flex;flex-direction:column;gap:10px;min-height:40vh}
     .ch-b{max-width:88%;padding:11px 13px;border-radius:16px;font-size:14.5px;line-height:1.5;white-space:pre-wrap;word-wrap:break-word}
-    .ch-me{align-self:flex-end;background:var(--accent);color:#fff;border-bottom-right-radius:5px}
-    .ch-ai{align-self:flex-start;background:var(--surface);border:1px solid var(--border);border-bottom-left-radius:5px}
+    .ch-me{align-self:flex-end;background:var(--char);color:#fff;border-bottom-right-radius:5px}
+    .ch-ai{align-self:flex-start;background:var(--surface);border:1px solid var(--line);border-bottom-left-radius:5px}
     .ch-ai b{font-weight:800}
     .ch-think{align-self:flex-start;color:var(--muted);font-size:13px;padding:8px 4px}
     .ch-dot{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--muted);margin-right:3px;animation:chb 1.2s infinite}
     .ch-dot:nth-child(2){animation-delay:.15s}.ch-dot:nth-child(3){animation-delay:.3s}
     @keyframes chb{0%,60%,100%{opacity:.25}30%{opacity:1}}
     .ch-bar{position:sticky;bottom:calc(84px + env(safe-area-inset-bottom));background:var(--plane);padding:8px 0 4px;display:flex;gap:8px;align-items:flex-end}
-    .ch-bar textarea{flex:1;resize:none;background:var(--surface);border:1px solid var(--border);color:var(--ink);border-radius:14px;padding:12px 14px;font-size:16px;font-family:inherit;max-height:120px;line-height:1.4}
-    .ch-send{flex:none;width:46px;height:46px;border-radius:14px;border:0;background:var(--accent);color:#fff;font-size:20px;cursor:pointer}
+    .ch-bar textarea{flex:1;resize:none;background:var(--surface);border:1px solid var(--line);color:var(--ink);border-radius:14px;padding:12px 14px;font-size:16px;font-family:inherit;max-height:120px;line-height:1.4}
+    .ch-send{flex:none;width:46px;height:46px;border-radius:14px;border:0;background:var(--char);color:#fff;font-size:20px;cursor:pointer}
     .ch-send:disabled{opacity:.45}
     .ch-sugg{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:4px}
-    .ch-sugg button{background:var(--surface);border:1px solid var(--border);color:var(--ink-2);border-radius:99px;padding:8px 12px;font-size:12.5px;font-weight:600;cursor:pointer}
+    .ch-sugg button{background:var(--surface);border:1px solid var(--line);color:var(--ink-2);border-radius:99px;padding:8px 12px;font-size:12.5px;font-weight:600;cursor:pointer}
   </style>`));
 }
 

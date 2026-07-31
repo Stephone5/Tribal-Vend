@@ -27,8 +27,8 @@ function lineChart(series, { color = "var(--s1)", avg = null, fmt = money } = {}
   const iw = W - L - R, ih = H - T - B;
   const xf = i => L + (series.length === 1 ? iw / 2 : (i / (series.length - 1)) * iw);
   const yf = v => T + ih - ((v - lo) / (hi - lo || 1)) * ih;
-  for (let g = 0; g <= 2; g++) { const yv = lo + (hi - lo) * g / 2; const y = yf(yv); ln(s, L, y, W - R, y, "var(--grid)"); tx(s, L, y - 4, fmt(yv), { anchor: "start" }); }
-  if (lo < 0) ln(s, L, yf(0), W - R, yf(0), "var(--baseline)", 1.5);
+  for (let g = 0; g <= 2; g++) { const yv = lo + (hi - lo) * g / 2; const y = yf(yv); ln(s, L, y, W - R, y, "var(--line)"); tx(s, L, y - 4, fmt(yv), { anchor: "start" }); }
+  if (lo < 0) ln(s, L, yf(0), W - R, yf(0), "var(--muted)", 1.5);
   let d = `M ${xf(0)} ${yf(vals[0])}`; series.forEach((p, i) => d += ` L ${xf(i)} ${yf(p.v)}`);
   path(s, d + ` L ${xf(series.length - 1)} ${yf(lo)} L ${xf(0)} ${yf(lo)} Z`, "none", 0, color).setAttribute("opacity", ".10");
   path(s, d, color, 2);
@@ -47,9 +47,9 @@ function barChart(series, { fmt = money } = {}) {
   const hi = niceMax(Math.max(...vals, 0) * 1.1), lo = Math.min(0, ...vals) * 1.1;
   const iw = W - L - R, ih = H - T - B;
   const yf = v => T + ih - ((v - lo) / (hi - lo || 1)) * ih;
-  for (let g = 0; g <= 2; g++) { const yv = lo + (hi - lo) * g / 2; const y = yf(yv); ln(s, L, y, W - R, y, "var(--grid)"); tx(s, L, y - 4, fmt(yv), { anchor: "start" }); }
+  for (let g = 0; g <= 2; g++) { const yv = lo + (hi - lo) * g / 2; const y = yf(yv); ln(s, L, y, W - R, y, "var(--line)"); tx(s, L, y - 4, fmt(yv), { anchor: "start" }); }
   const zero = yf(0);
-  ln(s, L, zero, W - R, zero, "var(--baseline)", 1.5);
+  ln(s, L, zero, W - R, zero, "var(--muted)", 1.5);
   const gw = iw / series.length, bw = Math.min(16, gw - 4);
   series.forEach((d, i) => {
     const x = L + i * gw + (gw - bw) / 2, y = d.v >= 0 ? yf(d.v) : zero;
@@ -66,7 +66,7 @@ function groupChart(rows, aKey, bKey, aColor, bColor) {
   const hi = niceMax(Math.max(...rows.map(d => Math.max(d[aKey], d[bKey]))) * 1.1);
   const iw = W - L - R, ih = H - T - B;
   const yf = v => T + ih - (v / hi) * ih;
-  for (let g = 0; g <= 2; g++) { const yv = hi * g / 2; const y = yf(yv); ln(s, L, y, W - R, y, "var(--grid)"); tx(s, L, y - 4, money(yv), { anchor: "start" }); }
+  for (let g = 0; g <= 2; g++) { const yv = hi * g / 2; const y = yf(yv); ln(s, L, y, W - R, y, "var(--line)"); tx(s, L, y - 4, money(yv), { anchor: "start" }); }
   const gw = iw / rows.length, bw = Math.min(10, (gw - 5) / 2);
   rows.forEach((d, i) => {
     const cx = L + i * gw + gw / 2;
@@ -84,7 +84,7 @@ function hourChart(byHour) {
   const hi = niceMax(Math.max(...byHour) * 1.1);
   const iw = W - L - R, ih = H - T - B;
   const yf = v => T + ih - (v / (hi || 1)) * ih;
-  for (let g = 0; g <= 2; g++) { const yv = hi * g / 2; const y = yf(yv); ln(s, L, y, W - R, y, "var(--grid)"); tx(s, L, y - 4, money(yv), { anchor: "start" }); }
+  for (let g = 0; g <= 2; g++) { const yv = hi * g / 2; const y = yf(yv); ln(s, L, y, W - R, y, "var(--line)"); tx(s, L, y - 4, money(yv), { anchor: "start" }); }
   const gw = iw / 24, bw = Math.max(6, gw - 3);
   byHour.forEach((v, h) => {
     const busy = v >= hi * 0.5;
@@ -102,6 +102,9 @@ const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;",
 const shortName = s => String(s).replace(/^(Meals|Drinks|Crackers)\s*[-:]\s*/i, "").replace(/\s*\d+(\.\d+)?\s*(oz|fl oz|ct|count|-Ounce|piece).*$/i, "").replace(/,.*$/, "").trim().slice(0, 26);
 
 // ---------- data health ----------
+// Runs quietly. Anything the app can resolve on its own already is resolved
+// (current prices used for margins, minor drift ignored). Only things that
+// genuinely cost money and need YOUR hand get surfaced — as one plain line.
 async function renderAudit(root) {
   const holder = el(`<div id="tv-audit"></div>`);
   root.appendChild(holder);
@@ -113,46 +116,21 @@ async function renderAudit(root) {
   } catch (e) { return; }
   if (!a.issues) return;
 
-  const { critical, warning } = a.counts;
-  const clean = critical === 0 && warning === 0;
-  const dot = clean ? "var(--good)" : critical ? "var(--bad)" : "var(--warn)";
-  const label = clean ? "All checks passed" : `${critical ? `${critical} needs fixing` : ""}${critical && warning ? " · " : ""}${warning ? `${warning} to review` : ""}`;
+  // Only these actually need a human. Everything else is handled silently.
+  const ACTIONABLE = new Set(["below_cost", "thin_margin", "machine_unreachable", "no_sales", "unknown_costs"]);
+  const act = a.issues.filter(i => ACTIONABLE.has(i.code));
+  if (!act.length) return;
 
-  holder.appendChild(el(`<h2>Data health</h2>`));
-  const card = el(`<div class="card"></div>`);
-  const head = el(`<div style="display:flex;align-items:center;gap:9px;cursor:pointer">
-      <span style="width:10px;height:10px;border-radius:50%;background:${dot};flex:none"></span>
-      <div style="flex:1"><div class="ct" style="margin:0">${label}</div>
-      <div class="cs" style="margin:2px 0 0">${a.slotsChecked} slots checked · tap for detail</div></div>
-      <span style="color:var(--muted);font-size:18px">›</span>
-    </div>`);
-  card.appendChild(head);
-  const body = el(`<div hidden style="margin-top:10px"></div>`);
-  head.onclick = () => { body.hidden = !body.hidden; };
-  if (!clean) body.hidden = false;
-
-  a.issues.forEach(iss => {
-    const c = iss.severity === "critical" ? "var(--bad)" : iss.severity === "warning" ? "var(--warn)" : "var(--muted)";
-    const box = el(`<div style="border-left:3px solid ${c};background:var(--surface-2);border-radius:10px;padding:11px 12px;margin-top:9px">
-        <div style="font-weight:700;font-size:13.5px">${esc(iss.title)}</div>
-        <div style="color:var(--ink-2);font-size:12.5px;margin-top:3px;line-height:1.45">${esc(iss.detail)}</div>
-        <div style="color:var(--muted);font-size:12px;margin-top:5px">${esc(iss.fix)}</div>
-      </div>`);
-    if (iss.products && (iss.code === "estimated_costs" || iss.code === "unknown_costs")) {
-      const list = el(`<div style="margin-top:9px;display:flex;flex-wrap:wrap;gap:6px"></div>`);
-      iss.products.forEach(p => {
-        const b = el(`<button style="background:var(--surface);border:1px solid var(--border);border-radius:9px;padding:7px 10px;font-size:12px;font-weight:600;color:var(--ink);cursor:pointer"></button>`);
-        b.textContent = `${shortName(p.product)} · ${p.cost == null ? "set cost" : money2(p.cost)}`;
-        b.onclick = () => editCost(p, root);
-        list.appendChild(b);
-      });
-      box.appendChild(list);
+  act.slice(0, 3).forEach(iss => {
+    const cls = iss.severity === "critical" ? "bad" : "warn";
+    const n = el(`<div class="note ${cls}"><b>${esc(iss.title)}</b> ${esc(iss.detail)}</div>`);
+    if (iss.products && iss.code === "unknown_costs") {
+      const b = el(`<button class="btn ghost" style="margin-top:10px;padding:12px">Set the missing costs</button>`);
+      b.onclick = () => editCost(iss.products[0], root);
+      n.appendChild(b);
     }
-    body.appendChild(box);
+    holder.appendChild(n);
   });
-
-  card.appendChild(body);
-  holder.appendChild(card);
 }
 
 function editCost(p, root) {
@@ -161,7 +139,7 @@ function editCost(p, root) {
       <div style="font-weight:800;font-size:16px">${esc(shortName(p.product))}</div>
       <div style="color:var(--muted);font-size:12.5px;margin-top:3px">Sells for ${money2(p.price)}. What do you pay per unit?</div>
       <input id="cst" type="text" inputmode="decimal" value="${p.cost != null ? p.cost : ""}" placeholder="0.00"
-        style="width:100%;margin-top:14px;background:var(--surface-2);border:1px solid var(--border);color:var(--ink);border-radius:12px;padding:14px;font-size:18px;text-align:center">
+        style="width:100%;margin-top:14px;background:var(--surface-2);border:1px solid var(--line);color:var(--ink);border-radius:12px;padding:14px;font-size:18px;text-align:center">
       <div id="cerr" style="color:var(--bad);font-size:12px;height:15px;margin-top:6px"></div>
       <button id="csave" class="btn" style="margin-top:4px">Save cost</button>
       <button id="ccancel" class="btn ghost" style="margin-top:8px">Cancel</button>
@@ -232,16 +210,16 @@ export async function renderCompany(root) {
   const lwSoFar = lwProfit * pace;
   const wkDelta = lwSoFar > 0 ? ((wkProfit - lwSoFar) / lwSoFar) * 100 : 0;
 
-  root.appendChild(el(`<h2>This week · since Sun ${wkLabel}</h2>`));
+  root.appendChild(el(`<h2>This week · since Sunday</h2>`));
   root.appendChild(el(`<div class="hero">
     <div class="k">Profit so far</div>
     <div class="v">${money2(wkProfit)}</div>
-    <div class="sub">${money2(wkRev)} in sales · <b>${wkUnits}</b> units · through ${dow[todayIdx]}</div>
+    <div class="sub">${money2(wkRev)} in sales · <b>${wkUnits}</b> units sold · through ${dow[todayIdx]}</div>
+    <div class="delta ${wkDelta >= 0 ? "up" : "down"}">${wkDelta >= 0 ? "▲" : "▼"} ${pct(wkDelta)} vs this point last week</div>
     <div class="chips">
-      <span class="chip" style="color:${wkDelta >= 0 ? "var(--good)" : "var(--bad)"}">vs last week<b style="color:inherit">${wkDelta >= 0 ? "▲" : "▼"} ${pct(wkDelta)}</b></span>
-      <span class="chip">Last week total<b>${money2(lwProfit)}</b></span>
-      <span class="chip">Empty slots<b>${allSlots.filter(s => s.onHand === 0).length}</b></span>
-      <span class="chip">Avg fill<b>${Math.round(allSlots.reduce((a, s) => a + s.fillPct, 0) / allSlots.length)}%</b></span>
+      <span class="chip"><span>Last week</span><b>${money(lwProfit)}</b></span>
+      <span class="chip"><span>Empty now</span><b>${allSlots.filter(s => s.onHand === 0).length}</b></span>
+      <span class="chip"><span>Avg fill</span><b>${Math.round(allSlots.reduce((a, s) => a + s.fillPct, 0) / allSlots.length)}%</b></span>
     </div>
   </div>`));
 
@@ -457,15 +435,15 @@ export async function renderCompany(root) {
       root.appendChild(el(`<div class="alert"><b>Stop after payment 93, not 96.</b> The schedule lists 96 payments but the balance hits zero at 93. Paying all 96 hands over about ${money(L.overpayWarning * L.payment)} you don't owe.</div>`));
     }
     const loanShare = (L.payment / (last.revenue || 1)) * 100;
-    root.appendChild(el(`<div class="alert" style="border-left-color:var(--accent)">The loan takes <b>${loanShare.toFixed(0)}%</b> of a month like ${last.m}. It's ${money(L.payment)} of your ${money(fixed)} fixed costs — the single biggest one.</div>`));
+    root.appendChild(el(`<div class="alert" style="border-left-color:var(--char)">The loan takes <b>${loanShare.toFixed(0)}%</b> of a month like ${last.m}. It's ${money(L.payment)} of your ${money(fixed)} fixed costs — the single biggest one.</div>`));
   }
 
   const breakeven = fixed / (1 - 0.52);
-  root.appendChild(el(`<div class="alert" style="border-left-color:var(--accent)"><b>Break-even is ${money(breakeven)}/month</b> in sales. Last month you did ${money(last.revenue)} — ${last.revenue >= breakeven ? `${money(last.revenue - breakeven)} above it.` : `${money(breakeven - last.revenue)} short.`}</div>`));
+  root.appendChild(el(`<div class="alert" style="border-left-color:var(--char)"><b>Break-even is ${money(breakeven)}/month</b> in sales. Last month you did ${money(last.revenue)} — ${last.revenue >= breakeven ? `${money(last.revenue - breakeven)} above it.` : `${money(breakeven - last.revenue)} short.`}</div>`));
 
   const foot = el(`<div style="text-align:center;color:var(--muted);font-size:11px;margin-top:18px">
     Live from AirVend · stock ${new Date(d.at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}${S ? ` · sales ${new Date(S.freshAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })} · ${S.txnCount.toLocaleString()} transactions` : ""}
-    <div style="margin-top:8px"><button id="refreshNow" class="chip" style="cursor:pointer;border:1px solid var(--border)">Refresh now</button></div>
+    <div style="margin-top:8px"><button id="refreshNow" class="chip" style="cursor:pointer;border:1px solid var(--line)">Refresh now</button></div>
   </div>`);
   root.appendChild(foot);
   foot.querySelector("#refreshNow").onclick = async (e) => {

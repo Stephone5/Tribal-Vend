@@ -223,7 +223,7 @@ function maybeShowInstall(){
   if(isInstalled()) return;                              // already downloaded → never show
   if(localStorage.getItem("tv_install_done")==="1") return;
   const iOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
-  const banner = el(`<div style="position:fixed;left:12px;right:12px;bottom:calc(84px + env(safe-area-inset-bottom));z-index:40;background:var(--surface);border:1px solid var(--border);border-radius:16px;box-shadow:0 8px 30px rgba(0,0,0,.12);padding:14px 15px">
+  const banner = el(`<div style="position:fixed;left:12px;right:12px;bottom:calc(84px + env(safe-area-inset-bottom));z-index:40;background:var(--surface);border:1px solid var(--line);border-radius:16px;box-shadow:0 8px 30px rgba(0,0,0,.12);padding:14px 15px">
     <div style="font-weight:800;font-size:15px">Add Tribal Vend to your phone</div>
     <div style="color:var(--ink-2);font-size:13px;margin-top:3px;line-height:1.45">${iOS ? `Tap the Share button, then <b>Add to Home Screen</b> — it opens full-screen like an app.` : `Install it for one-tap access and notifications.`}</div>
     <div style="display:flex;gap:8px;margin-top:12px">

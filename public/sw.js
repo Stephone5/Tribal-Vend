@@ -1,10 +1,19 @@
 // Tribal Vend service worker.
-// Network-first for the app shell (HTML + JS) so code files can never be served
-// as a stale mix of old and new versions — that mismatch is what causes a blank
-// white screen. Cache is the offline fallback only. Icons stay cache-first.
+//
+// Cache-FIRST for the app shell so the app opens instantly — even when the
+// server is asleep on Render's free tier. The shell paints immediately from
+// cache, then data loads over the network with our own loading state. That
+// removes Render's wake screen entirely for the installed app.
+//
+// A background update keeps the cached shell fresh: every load we quietly
+// re-fetch the shell and store the new copy for next time.
 
-const CACHE = "tv-v13";
-const SHELL = ["./", "./index.html", "./app.js", "./data.js", "./closet.js", "./company.js", "./chat.js", "./api.js", "./manifest.webmanifest"];
+const CACHE = "tv-v14";
+const SHELL = [
+  "./", "./index.html", "./app.js", "./data.js", "./closet.js",
+  "./company.js", "./chat.js", "./api.js", "./manifest.webmanifest",
+  "./icons/icon-192.png", "./icons/icon-512.png",
+];
 
 self.addEventListener("install", e => {
   e.waitUntil(
@@ -25,27 +34,28 @@ self.addEventListener("activate", e => {
 self.addEventListener("fetch", e => {
   const req = e.request;
   if (req.method !== "GET") return;
+
   const url = new URL(req.url);
-  if (url.origin !== location.origin) return;      // don't touch cross-origin
-  if (url.pathname.startsWith("/api/")) return;    // never cache API calls
+  if (url.origin !== self.location.origin) return;
 
-  const isShell = req.mode === "navigate" || /\.(js|html|webmanifest)$/.test(url.pathname) || url.pathname === "/";
+  // API calls always go to the network — never serve stale business data.
+  if (url.pathname.startsWith("/api/")) return;
 
-  if (isShell) {
-    // Network first: always try for the freshest code; fall back to cache offline.
-    e.respondWith(
-      fetch(req)
+  // Shell: cache-first, refresh in the background.
+  e.respondWith(
+    caches.match(req).then(hit => {
+      const net = fetch(req)
         .then(res => {
-          if (res && res.ok) { const copy = res.clone(); caches.open(CACHE).then(c => c.put(req, copy)); }
+          if (res && res.ok) {
+            const copy = res.clone();
+            caches.open(CACHE).then(c => c.put(req, copy)).catch(() => {});
+          }
           return res;
         })
-        .catch(() => caches.match(req).then(hit => hit || caches.match("./index.html")))
-    );
-    return;
-  }
-
-  // Everything else (icons, images): cache first, then network.
-  e.respondWith(caches.match(req).then(hit => hit || fetch(req)));
+        .catch(() => hit);
+      return hit || net;
+    })
+  );
 });
 
 // Restock push notifications land here once the backend sends them.

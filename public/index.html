@@ -2,158 +2,268 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#f5f4f0">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<meta name="theme-color" content="#282828">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icons/icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
 <title>Tribal Vend</title>
 <style>
   :root{
-    color-scheme: light;
-    --plane:#f5f4f0; --surface:#ffffff; --surface-2:#eeece6;
-    --ink:#0b0b0b; --ink-2:#52514e; --muted:#8a8880;
-    --grid:#e6e4dd; --baseline:#c3c2b7; --border:rgba(11,11,11,.10);
-    --s1:#2a78d6; --s2:#eb6834; --s3:#1baf7a; --s4:#eda100;
-    --s5:#e87ba4; --s6:#008300; --s7:#4a3aa7; --s8:#e34948;
-    --good:#0a8f0a; --bad:#cc2f2f; --warn:#b8860b;
-    --accent:#2a78d6;
+    /* brand */
+    --char:#282828;         /* crown background */
+    --gold:#fdfd00;         /* crown yellow */
+    --gold-ink:#7a6a00;     /* readable yellow-family text on light */
+
+    /* surfaces */
+    --plane:#f7f6f2;
+    --surface:#ffffff;
+    --surface-2:#f1efe9;
+    --line:#e7e4dc;
+
+    /* ink */
+    --ink:#1c1c1a;
+    --ink-2:#5b5952;
+    --muted:#918e85;
+
+    /* data */
+    --s1:#2a78d6; --s2:#e06636; --s3:#1a9d6e; --s4:#c99700;
+    --s5:#8b5cf6; --s6:#0f766e;
+    --good:#12823f; --bad:#c8372d; --warn:#a8760a;
+
+    --r:18px;
+    --shadow:0 1px 2px rgba(28,28,26,.04), 0 6px 18px rgba(28,28,26,.05);
   }
-  *{box-sizing:border-box}
-  html,body{margin:0;height:100%}
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent}
+  html{-webkit-text-size-adjust:100%}
+  html,body{margin:0; min-height:100%}
   body{
     background:var(--plane); color:var(--ink);
-    font-family:system-ui,-apple-system,"Segoe UI",sans-serif;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;
     -webkit-font-smoothing:antialiased;
-    padding-bottom:calc(104px + env(safe-area-inset-bottom));
+    font-size:16px; line-height:1.45;
+    padding-bottom:calc(96px + env(safe-area-inset-bottom));
   }
-  header{
-    padding:calc(14px + env(safe-area-inset-top)) 18px 12px;
-    display:flex; align-items:baseline; gap:10px;
-    border-bottom:1px solid var(--border);
-    position:sticky; top:0; background:var(--plane); z-index:5;
-  }
-  header .logo{font-weight:800; letter-spacing:-.02em; font-size:19px}
-  header .sub{color:var(--muted); font-size:12px}
-  main{padding:16px 14px 40px; max-width:760px; margin:0 auto}
-  /* P&L table + richer stat components */
-  .tbl{width:100%; border-collapse:collapse; font-size:12.5px; font-variant-numeric:tabular-nums}
-  .tbl th{text-align:right; color:var(--muted); font-weight:700; padding:7px 6px; border-bottom:1px solid var(--grid); white-space:nowrap; font-size:11px; text-transform:uppercase; letter-spacing:.04em}
-  .tbl th:first-child, .tbl td:first-child{text-align:left}
-  .tbl td{text-align:right; padding:8px 6px; border-bottom:1px solid var(--grid); white-space:nowrap}
-  .tbl tr:last-child td{border-bottom:0}
-  .tbl .pos{color:var(--good); font-weight:700}
-  .tbl .neg{color:var(--bad); font-weight:700}
-  .scrollx{overflow-x:auto; -webkit-overflow-scrolling:touch; margin:0 -4px; padding:0 4px}
-  .hero{background:var(--surface); border:1px solid var(--border); border-radius:18px; padding:16px 16px 14px}
-  .hero .k{color:var(--muted); font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.05em}
-  .hero .v{font-size:38px; font-weight:800; letter-spacing:-.03em; margin:4px 0 2px; line-height:1}
-  .hero .sub{color:var(--ink-2); font-size:13px}
-  .chips{display:flex; gap:8px; flex-wrap:wrap; margin-top:12px}
-  .chip{background:var(--surface-2); border-radius:10px; padding:8px 10px; font-size:12px; font-weight:600; color:var(--ink-2)}
-  .chip b{display:block; font-size:15px; color:var(--ink); font-variant-numeric:tabular-nums}
-  .bar-line{display:flex; align-items:center; gap:8px; padding:7px 4px}
-  .bar-line .lbl{flex:0 0 92px; font-size:12px; color:var(--ink-2); overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
-  .bar-line .track{flex:1; height:9px; background:var(--surface-2); border-radius:99px; overflow:hidden}
-  .bar-line .fill{height:100%; border-radius:99px}
-  .bar-line .amt{flex:0 0 auto; font-size:12px; font-weight:700; font-variant-numeric:tabular-nums; min-width:52px; text-align:right}
-  .alert{border-left:3px solid var(--bad); background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:12px 14px; font-size:13px; color:var(--ink-2); line-height:1.5; margin-top:10px}
-  .alert b{color:var(--ink)}
-  .seg{display:flex; gap:6px; margin:2px 2px 10px}
-  .seg button{flex:1; padding:9px 6px; border-radius:10px; border:1px solid var(--border); background:var(--surface-2); color:var(--ink-2); font-weight:700; font-size:12px; cursor:pointer}
-  .seg button.on{background:var(--accent); color:#fff; border-color:var(--accent)}
-  section[hidden]{display:none}
-  h2{font-size:13px; text-transform:uppercase; letter-spacing:.08em; color:var(--muted); margin:26px 4px 10px; font-weight:700}
-  h2:first-child{margin-top:6px}
 
-  .tiles{display:grid; grid-template-columns:1fr 1fr; gap:10px}
-  .tile{background:var(--surface); border:1px solid var(--border); border-radius:16px; padding:14px 15px}
-  .tile .k{color:var(--muted); font-size:12px; font-weight:600}
-  .tile .v{font-size:26px; font-weight:800; letter-spacing:-.02em; margin-top:3px}
-  .tile .d{font-size:12px; margin-top:2px; font-weight:600}
+  /* ---------- header ---------- */
+  header{
+    background:var(--char); color:#fff;
+    padding:calc(12px + env(safe-area-inset-top)) 20px 14px;
+    display:flex; align-items:center; gap:11px;
+    position:sticky; top:0; z-index:20;
+  }
+  header .crown{width:26px;height:26px;flex:none}
+  header .name{font-weight:800; font-size:18px; letter-spacing:-.01em}
+  header .spot{margin-left:auto; font-size:12px; color:rgba(255,255,255,.6); font-weight:500}
+
+  main{padding:0 16px; max-width:640px; margin:0 auto}
+  section[hidden]{display:none}
+
+  /* ---------- section heading ---------- */
+  h2{
+    font-size:12px; text-transform:uppercase; letter-spacing:.1em;
+    color:var(--muted); font-weight:800; margin:28px 2px 12px;
+  }
+  h2:first-child{margin-top:20px}
+
+  /* ---------- hero (charcoal, brand) ---------- */
+  .hero{
+    background:var(--char); color:#fff; border-radius:22px;
+    padding:20px 20px 18px; box-shadow:var(--shadow);
+  }
+  .hero .k{font-size:12px; text-transform:uppercase; letter-spacing:.09em; color:rgba(255,255,255,.55); font-weight:800}
+  .hero .v{font-size:44px; font-weight:800; letter-spacing:-.035em; line-height:1; margin:8px 0 6px}
+  .hero .sub{font-size:14px; color:rgba(255,255,255,.72)}
+  .hero .sub b{color:#fff; font-weight:700}
+  .hero .delta{
+    display:inline-flex; align-items:center; gap:5px; margin-top:14px;
+    background:rgba(255,255,255,.10); border-radius:99px; padding:7px 13px;
+    font-size:13px; font-weight:700;
+  }
+  .hero .delta.up{color:#7ff0a8} .hero .delta.down{color:#ff9c93}
+
+  .chips{display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-top:16px}
+  .chip{background:rgba(255,255,255,.09); border-radius:12px; padding:10px 8px; text-align:center}
+  .chip span{display:block; font-size:10.5px; text-transform:uppercase; letter-spacing:.06em; color:rgba(255,255,255,.55); font-weight:700}
+  .chip b{display:block; font-size:17px; font-weight:800; margin-top:3px; font-variant-numeric:tabular-nums}
+
+  /* ---------- tiles ---------- */
+  .tiles{display:grid; grid-template-columns:1fr 1fr; gap:11px}
+  .tile{
+    background:var(--surface); border-radius:var(--r); padding:15px 16px;
+    box-shadow:var(--shadow);
+  }
+  .tile .k{color:var(--muted); font-size:11.5px; font-weight:700; text-transform:uppercase; letter-spacing:.06em}
+  .tile .v{font-size:27px; font-weight:800; letter-spacing:-.03em; margin-top:5px; line-height:1.05; font-variant-numeric:tabular-nums}
+  .tile .d{font-size:12.5px; margin-top:5px; font-weight:600; color:var(--muted)}
   .up{color:var(--good)} .down{color:var(--bad)}
 
-  .card{background:var(--surface); border:1px solid var(--border); border-radius:18px; padding:16px 14px 12px}
+  /* ---------- cards ---------- */
+  .card{
+    background:var(--surface); border-radius:var(--r); padding:18px 16px 14px;
+    box-shadow:var(--shadow);
+  }
   .card + .card{margin-top:12px}
-  .card .ct{font-weight:700; font-size:15px; margin:0 2px 2px}
-  .card .cs{color:var(--muted); font-size:12px; margin:0 2px 12px}
+  .card .ct{font-weight:800; font-size:16px; letter-spacing:-.01em; margin:0 0 3px}
+  .card .cs{color:var(--muted); font-size:12.5px; margin:0 0 14px; line-height:1.4}
+
   svg.chart{display:block; width:100%; height:auto; overflow:visible}
-  .legend{display:flex; flex-wrap:wrap; gap:12px; margin:10px 2px 2px}
-  .legend span{display:inline-flex; align-items:center; gap:6px; font-size:12px; color:var(--ink-2)}
-  .legend i{width:10px; height:10px; border-radius:3px; display:inline-block}
+  .legend{display:flex; flex-wrap:wrap; gap:14px; margin:12px 0 2px}
+  .legend span{display:inline-flex; align-items:center; gap:6px; font-size:12px; color:var(--ink-2); font-weight:600}
+  .legend i{width:10px; height:10px; border-radius:3px}
 
-  .rows{margin-top:4px}
-  .row{display:flex; align-items:center; gap:10px; padding:9px 4px; border-top:1px solid var(--grid)}
+  /* ---------- rows ---------- */
+  .rows{margin-top:2px}
+  .row{display:flex; align-items:center; gap:12px; padding:13px 2px; border-top:1px solid var(--line); min-height:56px}
   .row:first-child{border-top:0}
-  .row .nm{flex:1; font-size:14px; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
-  .row .mt{font-size:12px; color:var(--muted)}
-  .row .val{font-weight:700; font-variant-numeric:tabular-nums; font-size:14px}
+  .row .nm{flex:1; min-width:0; font-size:14.5px; font-weight:600}
+  .row .mt{font-size:12px; color:var(--muted); font-weight:500; margin-top:2px; line-height:1.35}
+  .row .val{font-weight:800; font-variant-numeric:tabular-nums; font-size:15px; flex:none; text-align:right}
 
+  /* ---------- bar rows ---------- */
+  .bar-line{display:flex; align-items:center; gap:10px; padding:9px 2px}
+  .bar-line .lbl{flex:0 0 88px; font-size:12.5px; color:var(--ink-2); font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .bar-line .track{flex:1; height:10px; background:var(--surface-2); border-radius:99px; overflow:hidden}
+  .bar-line .fill{height:100%; border-radius:99px}
+  .bar-line .amt{flex:none; font-size:12.5px; font-weight:800; font-variant-numeric:tabular-nums; min-width:56px; text-align:right}
+
+  /* ---------- table ---------- */
+  .scrollx{overflow-x:auto; -webkit-overflow-scrolling:touch; margin:0 -16px; padding:0 16px}
+  .tbl{width:100%; border-collapse:collapse; font-size:13px; font-variant-numeric:tabular-nums}
+  .tbl th{text-align:right; color:var(--muted); font-weight:800; padding:9px 8px; border-bottom:1px solid var(--line); white-space:nowrap; font-size:10.5px; text-transform:uppercase; letter-spacing:.06em}
+  .tbl th:first-child, .tbl td:first-child{text-align:left; position:sticky; left:0; background:var(--surface)}
+  .tbl td{text-align:right; padding:11px 8px; border-bottom:1px solid var(--line); white-space:nowrap}
+  .tbl tr:last-child td{border-bottom:0}
+  .tbl .pos{color:var(--good); font-weight:800}
+  .tbl .neg{color:var(--bad); font-weight:800}
+
+  /* ---------- notes / alerts ---------- */
+  .note{
+    background:var(--surface); border-radius:14px; padding:14px 16px;
+    font-size:13.5px; color:var(--ink-2); line-height:1.5; margin-top:12px;
+    border-left:4px solid var(--gold); box-shadow:var(--shadow);
+  }
+  .note b{color:var(--ink); font-weight:700}
+  .note.warn{border-left-color:var(--warn)}
+  .note.bad{border-left-color:var(--bad)}
+  .note.good{border-left-color:var(--good)}
+
+  /* ---------- pills ---------- */
+  .pill{display:inline-block; font-size:11px; font-weight:800; padding:3px 9px; border-radius:99px; vertical-align:middle; margin-left:6px}
+  .pill.bad{background:rgba(200,55,45,.10); color:var(--bad)}
+  .pill.warn{background:rgba(168,118,10,.12); color:var(--warn)}
+  .pill.good{background:rgba(18,130,63,.10); color:var(--good)}
+
+  /* ---------- buttons ---------- */
+  .btn{
+    display:block; width:100%; margin-top:14px; background:var(--char); color:#fff;
+    border:0; border-radius:15px; padding:17px; font-size:16px; font-weight:800;
+    cursor:pointer; font-family:inherit; letter-spacing:-.01em;
+  }
+  .btn:active{transform:scale(.99)}
+  .btn:disabled{opacity:.5}
+  .btn.gold{background:var(--gold); color:var(--char)}
+  .btn.ghost{background:var(--surface); color:var(--ink); box-shadow:inset 0 0 0 1.5px var(--line)}
+
+  /* ---------- forms ---------- */
+  .field{margin:16px 0}
+  .field label{display:block; font-size:13px; color:var(--ink-2); font-weight:700; margin-bottom:8px}
+  select,input[type=text],textarea{
+    width:100%; background:var(--surface); border:1.5px solid var(--line); color:var(--ink);
+    border-radius:14px; padding:15px 16px; font-size:16px; font-family:inherit;
+  }
+  select:focus,input:focus,textarea:focus{outline:none; border-color:var(--char)}
+
+  .empty{color:var(--muted); font-size:14px; text-align:center; padding:36px 16px; line-height:1.5}
+
+  /* ---------- restock list ---------- */
+  .parlist{background:var(--surface); border-radius:var(--r); box-shadow:var(--shadow); padding:4px 14px; margin-top:4px}
+  .par{display:flex; align-items:center; gap:12px; padding:10px 0; border-top:1px solid var(--line); min-height:62px}
+  .par:first-child{border-top:0}
+  .par .sl{
+    flex:none; width:38px; height:38px; border-radius:11px; background:var(--surface-2);
+    display:flex; align-items:center; justify-content:center;
+    font-weight:800; font-size:13px; color:var(--ink-2); font-variant-numeric:tabular-nums;
+  }
+  .par .pi{flex:1; min-width:0; font-size:14px; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .par input{
+    flex:none; width:74px; text-align:center; padding:12px 6px; font-size:16px;
+    border-radius:12px; border:1.5px solid var(--line); background:var(--surface-2);
+  }
+  .par input:focus{background:var(--surface); border-color:var(--char)}
+  .par input:not(:placeholder-shown){border-color:var(--char); background:var(--surface); font-weight:800}
+
+  /* ---------- bottom nav ---------- */
   nav{
-    position:fixed; left:0; right:0; bottom:0; z-index:10;
-    display:flex; background:rgba(255,255,255,.92); backdrop-filter:blur(12px);
-    border-top:1px solid var(--border);
+    position:fixed; left:0; right:0; bottom:0; z-index:30;
+    display:flex; background:rgba(255,255,255,.94);
+    -webkit-backdrop-filter:saturate(180%) blur(20px); backdrop-filter:saturate(180%) blur(20px);
+    border-top:1px solid var(--line);
     padding-bottom:env(safe-area-inset-bottom);
   }
   nav button{
     flex:1; background:none; border:0; color:var(--muted);
-    padding:11px 4px 12px; font-size:11px; font-weight:700; letter-spacing:.02em;
+    padding:10px 4px 9px; font-size:10.5px; font-weight:700; letter-spacing:.01em;
     display:flex; flex-direction:column; align-items:center; gap:4px; cursor:pointer;
+    font-family:inherit; position:relative; min-height:56px; justify-content:center;
   }
-  nav button svg{width:23px; height:23px; stroke:currentColor; fill:none; stroke-width:1.8}
-  nav button.on{color:var(--accent)}
+  nav button svg{width:24px; height:24px; stroke:currentColor; fill:none; stroke-width:1.9; stroke-linecap:round; stroke-linejoin:round}
+  nav button.on{color:var(--char)}
+  nav button.on::before{
+    content:""; position:absolute; top:0; left:50%; transform:translateX(-50%);
+    width:30px; height:3px; background:var(--gold); border-radius:0 0 3px 3px;
+  }
 
-  .field{margin:14px 0}
-  .field label{display:block; font-size:13px; color:var(--ink-2); font-weight:600; margin-bottom:7px}
-  select,input[type=text]{
-    width:100%; background:var(--surface-2); border:1px solid var(--border); color:var(--ink);
-    border-radius:12px; padding:13px 14px; font-size:16px; font-family:inherit;
+  /* ---------- unlock ---------- */
+  #lock{
+    position:fixed; inset:0; z-index:100; background:var(--char); color:#fff;
+    display:flex; align-items:center; justify-content:center; padding:28px;
   }
-  .parlist{margin-top:6px}
-  .par{display:flex; align-items:center; gap:10px; padding:10px 2px; border-top:1px solid var(--grid)}
-  .par .sl{width:44px; font-weight:700; color:var(--muted); font-size:13px}
-  .par .pi{flex:1; font-size:14px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
-  .par input{width:66px; text-align:center; padding:9px 6px; font-size:16px}
-  .btn{
-    display:block; width:100%; margin-top:18px; background:var(--accent); color:#fff;
-    border:0; border-radius:14px; padding:16px; font-size:16px; font-weight:800; cursor:pointer;
+  #lock .in{width:100%; max-width:320px; text-align:center}
+  #lock .crown{width:62px; height:62px; margin:0 auto 20px; display:block}
+  #lock h1{font-size:23px; font-weight:800; margin:0 0 6px; letter-spacing:-.02em}
+  #lock p{color:rgba(255,255,255,.55); font-size:14px; margin:0 0 26px}
+  #lock input{
+    width:100%; background:rgba(255,255,255,.09); border:1.5px solid rgba(255,255,255,.16);
+    color:#fff; border-radius:15px; padding:17px; font-size:20px; text-align:center;
+    letter-spacing:.4em; font-family:inherit;
   }
-  .btn.ghost{background:var(--surface-2); color:var(--ink); border:1px solid var(--border)}
-  .note{background:var(--surface); border:1px solid var(--border); border-left:3px solid var(--accent);
-        border-radius:12px; padding:12px 14px; font-size:13px; color:var(--ink-2); line-height:1.5; margin-top:14px}
-  .buy .row .val{color:var(--good)}
-  .empty{color:var(--muted); font-size:13px; text-align:center; padding:26px 10px}
-  .pill{display:inline-block; font-size:11px; font-weight:700; padding:3px 9px; border-radius:99px}
-  .pill.bad{background:rgba(204,47,47,.12); color:#b02a2a}
-  .pill.warn{background:rgba(184,134,11,.16); color:#8a6d0a}
+  #lock input::placeholder{letter-spacing:normal; color:rgba(255,255,255,.3)}
+  #lock input:focus{outline:none; border-color:var(--gold)}
+  #lock .err{color:#ff9c93; font-size:13px; height:18px; margin-top:10px; font-weight:600}
+  #lock button{
+    width:100%; margin-top:6px; background:var(--gold); color:var(--char); border:0;
+    border-radius:15px; padding:17px; font-size:16px; font-weight:800; cursor:pointer; font-family:inherit;
+  }
 
-  /* passcode lock — first paint, covers everything */
-  #lock{position:fixed; inset:0; z-index:200; background:var(--plane); display:flex; align-items:center; justify-content:center; padding:24px}
-  #lock .lk-box{width:100%; max-width:320px; text-align:center}
-  #lock .lk-logo{font-size:22px; font-weight:800; letter-spacing:-.02em}
-  #lock .lk-sub{color:var(--muted); font-size:13px; margin:6px 0 16px}
-  #lock input{width:100%; background:var(--surface); border:1px solid var(--border); color:var(--ink); border-radius:12px; padding:14px; font-size:18px; text-align:center}
-  #lock #pcerr{color:var(--bad); font-size:12px; height:16px; margin-top:8px}
-  #lock button{width:100%; margin-top:6px; background:var(--accent); color:#fff; border:0; border-radius:14px; padding:15px; font-size:16px; font-weight:800; cursor:pointer}
+  /* ---------- skeleton loading ---------- */
+  .skel{background:linear-gradient(90deg,var(--surface-2) 25%,#e8e5dd 50%,var(--surface-2) 75%);
+    background-size:200% 100%; animation:sk 1.4s infinite; border-radius:12px}
+  @keyframes sk{0%{background-position:200% 0}100%{background-position:-200% 0}}
 </style>
 </head>
 <body>
 
 <div id="lock">
-  <div class="lk-box">
-    <div class="lk-logo">Tribal Vend</div>
-    <div id="lk-wait" class="lk-sub">Unlocking…</div>
-    <div id="lockform" style="display:none">
-      <div class="lk-sub">Enter your passcode</div>
-      <input id="pc" type="password" inputmode="numeric" placeholder="••••" autocomplete="off">
-      <div id="pcerr"></div>
-      <button id="pcgo">Unlock</button>
-    </div>
+  <div class="in">
+    <svg class="crown" viewBox="0 0 100 100" fill="none">
+      <path d="M14 74 L22 24 L38 48 L50 18 L62 48 L82 30 L70 78 Z" stroke="#fdfd00" stroke-width="7" stroke-linejoin="round" stroke-linecap="round"/>
+    </svg>
+    <h1>Tribal Vend</h1>
+    <p>Enter your passcode</p>
+    <input id="pc" type="password" inputmode="numeric" placeholder="••••" autocomplete="off">
+    <div class="err" id="pcerr"></div>
+    <button id="pcgo">Unlock</button>
   </div>
 </div>
 
 <header>
-  <span class="logo">Tribal Vend</span>
-  <span class="sub">2 machines · State College</span>
+  <svg class="crown" viewBox="0 0 100 100" fill="none">
+    <path d="M14 74 L22 24 L38 48 L50 18 L62 48 L82 30 L70 78 Z" stroke="#fdfd00" stroke-width="8" stroke-linejoin="round" stroke-linecap="round"/>
+  </svg>
+  <span class="name">Tribal Vend</span>
+  <span class="spot">2 machines</span>
 </header>
 
 <main>
@@ -165,19 +275,19 @@
 
 <nav>
   <button data-tab="company" class="on">
-    <svg viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>
-    Company
+    <svg viewBox="0 0 24 24"><path d="M3 20h18M6 20V11M11 20V5M16 20v-6M21 20v-9"/></svg>
+    Business
   </button>
   <button data-tab="runs">
-    <svg viewBox="0 0 24 24"><path d="M3 6h18M3 12h18M3 18h12"/><circle cx="19" cy="18" r="2"/></svg>
-    Runs
+    <svg viewBox="0 0 24 24"><path d="M20 7H8M20 12H8M20 17H8"/><circle cx="4" cy="7" r="1.4"/><circle cx="4" cy="12" r="1.4"/><circle cx="4" cy="17" r="1.4"/></svg>
+    Restock
   </button>
   <button data-tab="closet">
-    <svg viewBox="0 0 24 24"><path d="M4 7h16v13H4zM4 7l2-3h12l2 3M10 11h4"/></svg>
+    <svg viewBox="0 0 24 24"><path d="M4 9h16v11a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1z"/><path d="M4 9l1.6-4.2A1 1 0 0 1 6.5 4h11a1 1 0 0 1 .9.8L20 9M10 13h4"/></svg>
     Closet
   </button>
   <button data-tab="chat">
-    <svg viewBox="0 0 24 24"><path d="M21 12a8 8 0 0 1-8 8H7l-4 3v-5.5A8 8 0 0 1 13 4a8 8 0 0 1 8 8z"/></svg>
+    <svg viewBox="0 0 24 24"><path d="M20 11.5a7.5 7.5 0 0 1-7.5 7.5H8l-4 3v-4.6A7.5 7.5 0 0 1 12.5 4 7.5 7.5 0 0 1 20 11.5z"/></svg>
     Ask
   </button>
 </nav>
@@ -187,43 +297,6 @@
   if ("serviceWorker" in navigator) {
     window.addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(()=>{}));
   }
-
-  // Safety net: if the app fails to start for any reason, show a real message
-  // with a one-tap repair instead of a silent white screen.
-  function tvFail(detail){
-    if (document.getElementById("tv-fail")) return;
-    var d = document.createElement("div");
-    d.id = "tv-fail";
-    d.style.cssText = "position:fixed;inset:0;z-index:999;background:#fff;color:#111;display:flex;align-items:center;justify-content:center;padding:24px;font-family:system-ui,-apple-system,'Segoe UI',sans-serif";
-    d.innerHTML =
-      '<div style="max-width:340px;text-align:center">' +
-      '<div style="font-size:19px;font-weight:800;margin-bottom:6px">Tribal Vend needs a refresh</div>' +
-      '<div style="color:#555;font-size:13px;line-height:1.5;margin-bottom:16px">The app got a stale copy of itself. Tap below to clear it and reload — nothing is lost.</div>' +
-      '<button id="tv-fix" style="width:100%;background:#1f6feb;color:#fff;border:0;border-radius:14px;padding:15px;font-size:16px;font-weight:800">Repair &amp; reload</button>' +
-      '<div style="color:#999;font-size:11px;margin-top:14px;word-break:break-word">' + (detail || "") + '</div>' +
-      '</div>';
-    document.body.appendChild(d);
-    document.getElementById("tv-fix").onclick = async function(){
-      try {
-        if (window.caches) { var ks = await caches.keys(); await Promise.all(ks.map(function(k){ return caches.delete(k); })); }
-        if (navigator.serviceWorker) { var rs = await navigator.serviceWorker.getRegistrations(); await Promise.all(rs.map(function(r){ return r.unregister(); })); }
-      } catch(e){}
-      location.reload(true);
-    };
-  }
-  window.addEventListener("error", function(e){
-    if (e && e.target && (e.target.tagName === "SCRIPT" || e.target.tagName === "LINK")) tvFail("Couldn't load " + (e.target.src || e.target.href || "a file"));
-    else if (e && e.message) tvFail(e.message);
-  }, true);
-  window.addEventListener("unhandledrejection", function(e){ tvFail(e && e.reason ? String(e.reason).slice(0,140) : "Startup failed"); });
-  // If nothing has rendered after 8s, treat it as a failed start.
-  window.addEventListener("load", function(){
-    setTimeout(function(){
-      var c = document.getElementById("company");
-      var painted = (c && c.innerHTML.trim().length > 0) || document.getElementById("pc") || document.getElementById("tv-fail");
-      if (!painted) tvFail("The app didn't finish starting.");
-    }, 8000);
-  });
 </script>
 </body>
 </html>
