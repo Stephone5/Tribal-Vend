@@ -4,58 +4,68 @@
 // National Bank statements. Live product + price data is pulled from AirVend.
 
 // --- unit costs, matched to AirVend product names by keyword ---
-// [keywords, unitCost, sortlyName]
+// source "sortly" = verified from Stephen's own Sortly export.
+// source "estimate" = my best guess, NOT verified — surfaced in the app so it
+// can be corrected. Estimates are the main accuracy risk in the numbers.
+// [keywords, unitCost, source, sortlyName]
 export const COST_RULES = [
-  [["jimmy dean"], 1.00, "Jimmy Dean SEC"],
-  [["hot pocket"], 0.79, "Hot Pockets"],
-  [["uncrustable"], 0.78, "Uncrustables"],
-  [["c4 frozen", "c4 "], 2.33, "12 ounce C4"],
-  [["black rifle"], 1.67, "Black Rifle Coffee"],
-  [["celsius"], 1.00, "Celsius"],
-  [["java monster", "coffee + energy"], 2.02, "Coffee Monster"],
-  [["coke"], 0.71, "Coke"],
-  [["drpepper", "dr pepper"], 0.67, "Dr Pepper"],
-  [["gatorade"], 0.77, "Gatorade Blue"],
-  [["mountain dew"], 0.62, "Mtn Dew"],
-  [["snapple"], 0.88, "Snapple"],
-  [["sparkling ice"], 0.67, "Sparkling ICE"],
-  [["muffin"], 0.95, "Muffins"],
-  [["snyder"], 0.68, "Snyders Pretzel peices"],
-  [["sun chips"], 0.62, "Sun Chips"],
-  [["jack link"], 1.20, "Jack links"],
-  // reasonable costs for products not in the Sortly export
-  [["monster energy"], 1.53, null],
-  [["red bull"], 1.46, null],
-  [["deer park", "water"], 0.20, null],
-  [["vitamin water"], 1.00, null],
-  [["arizona"], 0.45, null],
-  [["pepsi"], 0.62, null],
-  [["sprite"], 0.71, null],
-  [["miss vickie"], 0.62, null],
-  [["takis"], 0.70, null],
-  [["ruffles"], 0.62, null],
-  [["cheez-it", "cheez it"], 0.55, null],
-  [["nutty buddy"], 0.57, null],
-  [["starburst"], 0.75, null],
-  [["mm peanut", "m&m"], 0.94, null],
-  [["trail mix"], 0.41, null],
-  [["payday"], 0.95, null],
-  [["trident"], 0.45, null],
-  [["clif bar"], 1.05, null],
-  [["welch"], 0.35, null],
-  [["oatmeal cream"], 0.45, null],
-  [["reese"], 0.77, null],
-  [["kitkat", "kit kat"], 0.94, null],
-  [["butterfinger"], 0.77, null],
-  [["poptart", "pop tart"], 0.21, null],
-  [["honey bun"], 0.60, null],
+  [["jimmy dean"], 1.00, "sortly", "Jimmy Dean SEC"],
+  [["hot pocket"], 0.79, "sortly", "Hot Pockets"],
+  [["uncrustable"], 0.78, "sortly", "Uncrustables"],
+  [["c4 frozen", "c4 "], 2.33, "sortly", "12 ounce C4"],
+  [["black rifle"], 1.67, "sortly", "Black Rifle Coffee"],
+  [["celsius"], 1.00, "sortly", "Celsius"],
+  [["java monster", "coffee + energy"], 2.02, "sortly", "Coffee Monster"],
+  [["coke"], 0.71, "sortly", "Coke"],
+  [["drpepper", "dr pepper"], 0.67, "sortly", "Dr Pepper"],
+  [["gatorade"], 0.77, "sortly", "Gatorade Blue"],
+  [["mountain dew"], 0.62, "sortly", "Mtn Dew"],
+  [["snapple"], 0.88, "sortly", "Snapple"],
+  [["sparkling ice"], 0.67, "sortly", "Sparkling ICE"],
+  [["muffin"], 0.95, "sortly", "Muffins"],
+  [["snyder"], 0.68, "sortly", "Snyders Pretzel peices"],
+  [["sun chips"], 0.62, "sortly", "Sun Chips"],
+  [["jack link"], 1.20, "sortly", "Jack links"],
+  // --- estimates: not from your records, correct these in the app ---
+  [["monster energy"], 1.53, "estimate", null],
+  [["red bull"], 1.46, "estimate", null],
+  [["deer park", "water"], 0.20, "estimate", null],
+  [["vitamin water"], 1.00, "estimate", null],
+  [["arizona"], 0.45, "estimate", null],
+  [["pepsi"], 0.62, "estimate", null],
+  [["sprite"], 0.71, "estimate", null],
+  [["miss vickie"], 0.62, "estimate", null],
+  [["takis"], 0.70, "estimate", null],
+  [["ruffles"], 0.62, "estimate", null],
+  [["cheez-it", "cheez it"], 0.55, "estimate", null],
+  [["nutty buddy"], 0.57, "estimate", null],
+  [["starburst"], 0.75, "estimate", null],
+  [["mm peanut", "m&m"], 0.94, "estimate", null],
+  [["trail mix"], 0.41, "estimate", null],
+  [["payday"], 0.95, "estimate", null],
+  [["trident"], 0.45, "estimate", null],
+  [["clif bar"], 1.05, "estimate", null],
+  [["welch"], 0.35, "estimate", null],
+  [["oatmeal cream"], 0.45, "estimate", null],
+  [["reese"], 0.77, "estimate", null],
+  [["kitkat", "kit kat"], 0.94, "estimate", null],
+  [["butterfinger"], 0.77, "estimate", null],
+  [["poptart", "pop tart"], 0.21, "estimate", null],
+  [["honey bun"], 0.60, "estimate", null],
 ];
 
-export function costFor(productName) {
+// overrides: { "<lowercased product name>": {cost, at} } — set by Stephen in the app.
+let OVERRIDES = {};
+export function setCostOverrides(o) { OVERRIDES = o || {}; }
+export function getCostOverrides() { return OVERRIDES; }
+
+export function costInfo(productName) {
   const n = (productName || "").toLowerCase();
-  for (const [keys, cost] of COST_RULES) if (keys.some(k => n.includes(k))) return cost;
-  return null; // unknown → surfaced in the app rather than guessed
+  if (OVERRIDES[n] && OVERRIDES[n].cost != null) return { cost: Number(OVERRIDES[n].cost), source: "yours" };
+  for (const [keys, cost, source] of COST_RULES) if (keys.some(k => n.includes(k))) return { cost, source };
+  return { cost: null, source: "unknown" };
 }
+export function costFor(productName) { return costInfo(productName).cost; }
 
 export function categoryFor(productName) {
   const n = (productName || "").toLowerCase();

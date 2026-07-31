@@ -101,6 +101,90 @@ function barRow(label, value, max, color, fmtv = money2) {
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const shortName = s => String(s).replace(/^(Meals|Drinks|Crackers)\s*[-:]\s*/i, "").replace(/\s*\d+(\.\d+)?\s*(oz|fl oz|ct|count|-Ounce|piece).*$/i, "").replace(/,.*$/, "").trim().slice(0, 26);
 
+// ---------- data health ----------
+async function renderAudit(root) {
+  const holder = el(`<div id="tv-audit"></div>`);
+  root.appendChild(holder);
+  let a;
+  try {
+    const r = await apiFetch("/api/audit");
+    if (!r.ok) return;
+    a = await r.json();
+  } catch (e) { return; }
+  if (!a.issues) return;
+
+  const { critical, warning } = a.counts;
+  const clean = critical === 0 && warning === 0;
+  const dot = clean ? "var(--good)" : critical ? "var(--bad)" : "var(--warn)";
+  const label = clean ? "All checks passed" : `${critical ? `${critical} needs fixing` : ""}${critical && warning ? " · " : ""}${warning ? `${warning} to review` : ""}`;
+
+  holder.appendChild(el(`<h2>Data health</h2>`));
+  const card = el(`<div class="card"></div>`);
+  const head = el(`<div style="display:flex;align-items:center;gap:9px;cursor:pointer">
+      <span style="width:10px;height:10px;border-radius:50%;background:${dot};flex:none"></span>
+      <div style="flex:1"><div class="ct" style="margin:0">${label}</div>
+      <div class="cs" style="margin:2px 0 0">${a.slotsChecked} slots checked · tap for detail</div></div>
+      <span style="color:var(--muted);font-size:18px">›</span>
+    </div>`);
+  card.appendChild(head);
+  const body = el(`<div hidden style="margin-top:10px"></div>`);
+  head.onclick = () => { body.hidden = !body.hidden; };
+  if (!clean) body.hidden = false;
+
+  a.issues.forEach(iss => {
+    const c = iss.severity === "critical" ? "var(--bad)" : iss.severity === "warning" ? "var(--warn)" : "var(--muted)";
+    const box = el(`<div style="border-left:3px solid ${c};background:var(--surface-2);border-radius:10px;padding:11px 12px;margin-top:9px">
+        <div style="font-weight:700;font-size:13.5px">${esc(iss.title)}</div>
+        <div style="color:var(--ink-2);font-size:12.5px;margin-top:3px;line-height:1.45">${esc(iss.detail)}</div>
+        <div style="color:var(--muted);font-size:12px;margin-top:5px">${esc(iss.fix)}</div>
+      </div>`);
+    if (iss.products && (iss.code === "estimated_costs" || iss.code === "unknown_costs")) {
+      const list = el(`<div style="margin-top:9px;display:flex;flex-wrap:wrap;gap:6px"></div>`);
+      iss.products.forEach(p => {
+        const b = el(`<button style="background:var(--surface);border:1px solid var(--border);border-radius:9px;padding:7px 10px;font-size:12px;font-weight:600;color:var(--ink);cursor:pointer"></button>`);
+        b.textContent = `${shortName(p.product)} · ${p.cost == null ? "set cost" : money2(p.cost)}`;
+        b.onclick = () => editCost(p, root);
+        list.appendChild(b);
+      });
+      box.appendChild(list);
+    }
+    body.appendChild(box);
+  });
+
+  card.appendChild(body);
+  holder.appendChild(card);
+}
+
+function editCost(p, root) {
+  const modal = el(`<div style="position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:60;display:flex;align-items:flex-end;justify-content:center"></div>`);
+  const sheet = el(`<div style="background:var(--surface);width:100%;max-width:520px;border-radius:20px 20px 0 0;padding:18px 16px calc(22px + env(safe-area-inset-bottom))">
+      <div style="font-weight:800;font-size:16px">${esc(shortName(p.product))}</div>
+      <div style="color:var(--muted);font-size:12.5px;margin-top:3px">Sells for ${money2(p.price)}. What do you pay per unit?</div>
+      <input id="cst" type="text" inputmode="decimal" value="${p.cost != null ? p.cost : ""}" placeholder="0.00"
+        style="width:100%;margin-top:14px;background:var(--surface-2);border:1px solid var(--border);color:var(--ink);border-radius:12px;padding:14px;font-size:18px;text-align:center">
+      <div id="cerr" style="color:var(--bad);font-size:12px;height:15px;margin-top:6px"></div>
+      <button id="csave" class="btn" style="margin-top:4px">Save cost</button>
+      <button id="ccancel" class="btn ghost" style="margin-top:8px">Cancel</button>
+    </div>`);
+  modal.appendChild(sheet); document.body.appendChild(modal);
+  modal.onclick = e => { if (e.target === modal) modal.remove(); };
+  sheet.querySelector("#ccancel").onclick = () => modal.remove();
+  const inp = sheet.querySelector("#cst"); inp.focus();
+  sheet.querySelector("#csave").onclick = async () => {
+    const v = parseFloat(inp.value);
+    const err = sheet.querySelector("#cerr");
+    if (isNaN(v) || v < 0) { err.textContent = "Enter a number, like 0.79"; return; }
+    if (v >= p.price) { err.textContent = `That's at or above the ${money2(p.price)} it sells for — it'd lose money.`; }
+    const btn = sheet.querySelector("#csave"); btn.disabled = true; btn.textContent = "Saving…";
+    try {
+      await apiFetch("/api/costs", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ product: p.product, cost: v }) });
+      await apiFetch("/api/live?refresh=1");
+      modal.remove();
+      renderCompany(root);
+    } catch (e) { err.textContent = "Couldn't save. Try again."; btn.disabled = false; btn.textContent = "Save cost"; }
+  };
+}
+
 // ---------- main render ----------
 export async function renderCompany(root) {
   root.innerHTML = `<h2>Company</h2><div class="empty">Loading live data…</div>`;
@@ -131,6 +215,9 @@ export async function renderCompany(root) {
   const vsAvg = ((last.revenue - avg3) / avg3) * 100;
 
   const marginPerDay = known.reduce((a, s) => a + (s.perDay || 0), 0);
+
+  // ================= DATA HEALTH =================
+  renderAudit(root);
 
   // ================= HERO — this week, live =================
   const wkLabel = S ? new Date(S.weekStart).toLocaleDateString([], { month: "short", day: "numeric" }) : "";

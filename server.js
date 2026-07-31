@@ -8,8 +8,9 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { runBrain, askBrain } from "./brain.js";
 import { writeOnHand, getMachineLive } from "./airvend.js";
-import { costFor, categoryFor, SOLD_BY_SLOT, SALES_WINDOW, MONTHLY, FIXED_COSTS, buildPL } from "./catalog.js";
+import { costFor, costInfo, setCostOverrides, categoryFor, SOLD_BY_SLOT, SALES_WINDOW, MONTHLY, FIXED_COSTS, buildPL } from "./catalog.js";
 import { CLOSET_SEED } from "./closet-seed.js";
+import { auditData } from "./audit.js";
 import { pullSales, summarize, startOfWeek, easternNow } from "./sales.js";
 import { getDoc, setDoc, storeReady } from "./store.js";
 import { SLOTS, LOAN, WINDOW_LABEL } from "./finance.js";
@@ -70,6 +71,7 @@ async function getSales(force = false) {
 }
 
 async function buildLive(force = false) {
+  if (!costsLoaded) await loadCostOverrides();
   // Live sales — falls back to the last good pull if AirVend's report engine hiccups.
   let sales = null;
   try { sales = await getSales(force); } catch (e) { sales = salesCache.sum; }
@@ -96,6 +98,7 @@ async function buildLive(force = false) {
       const cost = costFor(s.product);
       const rec = live[s.slot];
       const units = rec ? rec.units : (fallback[s.slot] ?? 0);
+      const ci = costInfo(s.product);
       // marginEach uses the CURRENT price — this is forward-looking economics.
       const marginEach = cost == null ? null : s.price - cost;
       // Historical profit is what actually happened, at whatever price was set then.
@@ -107,6 +110,7 @@ async function buildLive(force = false) {
       const forwardPerDay = marginEach == null ? null : marginEach * perDay; // $/day at today's price
       return {
         slot: s.slot, product: s.product, price: s.price, cost,
+        costSource: ci.source,
         onHand: s.onHand, max: s.max, units,
         week: rec ? rec.week : 0, prevWeek: rec ? rec.prevWeek : 0,
         category: categoryFor(s.product),
@@ -148,6 +152,52 @@ app.get("/api/live", async (req, res) => {
   } catch (err) {
     if (liveCache.data) return res.json({ ...liveCache.data, stale: true });
     res.status(502).json({ error: "live_failed", message: err?.message || "Couldn't reach AirVend." });
+  }
+});
+
+// ---- Data health: catch wrong/misleading numbers before they mislead you ----
+const COSTS_KEY = "costs:overrides";
+let costsLoaded = false;
+async function loadCostOverrides() {
+  try {
+    const o = await getDoc(COSTS_KEY);
+    setCostOverrides(o || {});
+    costsLoaded = true;
+  } catch (e) { /* keep whatever is in memory */ }
+}
+
+app.get("/api/audit", async (_req, res) => {
+  try {
+    if (!costsLoaded) await loadCostOverrides();
+    const live = (liveCache.data && Date.now() - liveCache.at < INV_TTL)
+      ? liveCache.data
+      : await buildLive().then(d => { liveCache = { at: Date.now(), data: d }; return d; });
+    const closet = await getDoc(CLOSET_KEY).catch(() => null);
+    res.json(auditData(live, closet));
+  } catch (err) {
+    res.status(502).json({ error: "audit_failed", message: err?.message || "Couldn't run the data check." });
+  }
+});
+
+// Your own costs — these override anything I estimated, permanently.
+app.get("/api/costs", async (_req, res) => {
+  try { res.json(await getDoc(COSTS_KEY) || {}); }
+  catch (err) { res.status(502).json({ error: "store_failed", message: err?.message }); }
+});
+app.put("/api/costs", async (req, res) => {
+  try {
+    const cur = (await getDoc(COSTS_KEY)) || {};
+    const { product, cost } = req.body || {};
+    if (!product) return res.status(400).json({ error: "bad_request", message: "No product given." });
+    const key = String(product).toLowerCase();
+    if (cost == null || cost === "") delete cur[key];
+    else cur[key] = { cost: Number(cost), at: Date.now() };
+    await setDoc(COSTS_KEY, cur);
+    setCostOverrides(cur);
+    liveCache = { at: 0, data: null }; // recompute margins with the corrected cost
+    res.json({ ok: true, costs: cur });
+  } catch (err) {
+    res.status(502).json({ error: "store_failed", message: err?.message });
   }
 });
 
