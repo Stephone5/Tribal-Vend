@@ -13,10 +13,20 @@ function injectStyles() {
   document.head.appendChild(el(`<style>
     .ch-wrap{display:flex;flex-direction:column;gap:12px}
     .ch-msgs{display:flex;flex-direction:column;gap:10px;min-height:40vh}
-    .ch-b{max-width:88%;padding:11px 13px;border-radius:16px;font-size:14.5px;line-height:1.5;white-space:pre-wrap;word-wrap:break-word}
-    .ch-me{align-self:flex-end;background:var(--char);color:#fff;border-bottom-right-radius:5px}
-    .ch-ai{align-self:flex-start;background:var(--surface);border:1px solid var(--line);border-bottom-left-radius:5px}
-    .ch-ai b{font-weight:800}
+    .ch-b{max-width:88%;padding:12px 14px;border-radius:16px;font-size:14.5px;line-height:1.5;word-wrap:break-word;overflow-wrap:anywhere}
+    .ch-me{align-self:flex-end;background:var(--char);color:#fff;border-bottom-right-radius:5px;white-space:pre-wrap}
+    .ch-ai{align-self:flex-start;background:var(--surface);border:1px solid var(--line);border-bottom-left-radius:5px;box-shadow:var(--shadow)}
+    /* formatted reply content */
+    .ch-ai p{margin:0 0 9px}
+    .ch-ai p:last-child,.ch-ai .ch-l:last-child{margin-bottom:0}
+    .ch-ai strong{font-weight:800;color:var(--ink)}
+    .ch-ai em{font-style:italic}
+    .ch-ai code{background:var(--surface-2);border-radius:5px;padding:1px 5px;font-size:13px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+    .ch-ai .ch-h{font-weight:800;font-size:14.5px;margin:12px 0 6px;color:var(--ink)}
+    .ch-ai .ch-h:first-child{margin-top:0}
+    .ch-ai .ch-l{margin:0 0 9px;padding-left:20px}
+    .ch-ai .ch-l li{margin:4px 0;padding-left:2px}
+    .ch-ai .ch-l li::marker{color:var(--muted);font-weight:700}
     .ch-think{align-self:flex-start;color:var(--muted);font-size:13px;padding:8px 4px}
     .ch-dot{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--muted);margin-right:3px;animation:chb 1.2s infinite}
     .ch-dot:nth-child(2){animation-delay:.15s}.ch-dot:nth-child(3){animation-delay:.3s}
@@ -38,9 +48,50 @@ const SUGGESTIONS = [
   "What should I stop selling?",
 ];
 
+// Escape first, then apply formatting — so nothing in a reply can inject markup.
+const escHtml = s => String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+// Minimal markdown → HTML: bold, italic, code, headings, bullet and numbered lists.
+function mdToHtml(src) {
+  const lines = escHtml(String(src)).replace(/\r\n/g, "\n").split("\n");
+  const inline = t => t
+    .replace(/\*\*\*(.+?)\*\*\*/g, "<strong><em>$1</em></strong>")
+    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+    .replace(/(^|[\s(])\*(?!\s)([^*\n]+?)\*(?=[\s.,;:!?)]|$)/g, "$1<em>$2</em>")
+    .replace(/`([^`\n]+?)`/g, "<code>$1</code>");
+
+  const out = [];
+  let list = null; // "ul" | "ol"
+  const closeList = () => { if (list) { out.push(`</${list}>`); list = null; } };
+
+  for (let raw of lines) {
+    const line = raw.trim();
+    if (!line) { closeList(); continue; }
+
+    const h = line.match(/^(#{1,4})\s+(.*)$/);
+    if (h) { closeList(); out.push(`<div class="ch-h">${inline(h[2])}</div>`); continue; }
+
+    const ul = line.match(/^[-*•]\s+(.*)$/);
+    if (ul) {
+      if (list !== "ul") { closeList(); out.push('<ul class="ch-l">'); list = "ul"; }
+      out.push(`<li>${inline(ul[1])}</li>`); continue;
+    }
+    const ol = line.match(/^(\d+)[.)]\s+(.*)$/);
+    if (ol) {
+      if (list !== "ol") { closeList(); out.push('<ol class="ch-l">'); list = "ol"; }
+      out.push(`<li>${inline(ol[2])}</li>`); continue;
+    }
+    closeList();
+    out.push(`<p>${inline(line)}</p>`);
+  }
+  closeList();
+  return out.join("");
+}
+
 function bubble(role, text) {
   const b = el(`<div class="ch-b ${role === "user" ? "ch-me" : "ch-ai"}"></div>`);
-  b.textContent = text;
+  if (role === "user") b.textContent = text;
+  else b.innerHTML = mdToHtml(text);
   return b;
 }
 
