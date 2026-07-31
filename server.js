@@ -11,9 +11,10 @@ import { writeOnHand, getMachineLive } from "./airvend.js";
 import { costFor, costInfo, setCostOverrides, categoryFor, SOLD_BY_SLOT, SALES_WINDOW, MONTHLY, FIXED_COSTS, buildPL } from "./catalog.js";
 import { CLOSET_SEED } from "./closet-seed.js";
 import { auditData } from "./audit.js";
+import { LOAN, loanStatus } from "./loan.js";
 import { pullSales, summarize, startOfWeek, easternNow } from "./sales.js";
 import { getDoc, setDoc, storeReady } from "./store.js";
-import { SLOTS, LOAN, WINDOW_LABEL } from "./finance.js";
+import { SLOTS, WINDOW_LABEL } from "./finance.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -42,7 +43,7 @@ app.use((req, res, next) => {
 
 // Financial data — behind the passcode (never in the public app code).
 app.get("/api/finance", (_req, res) => {
-  res.json({ monthly: MONTHLY, fixedCosts: FIXED_COSTS, slots: SLOTS, loan: LOAN, windowLabel: WINDOW_LABEL });
+  res.json({ monthly: MONTHLY, fixedCosts: FIXED_COSTS, slots: SLOTS, loan: loanStatus(), loanSchedule: LOAN, windowLabel: WINDOW_LABEL });
 });
 
 // ---- Live business data: real planogram + prices from AirVend, real costs,
@@ -138,7 +139,7 @@ async function buildLive(force = false) {
       freshAt: salesCache.at,
     } : null,
     window: SALES_WINDOW, monthly: MONTHLY, fixedCosts: FIXED_COSTS,
-    pl: buildPL(), loan: LOAN, at: Date.now(),
+    pl: buildPL(), loan: loanStatus(), at: Date.now(),
   };
 }
 

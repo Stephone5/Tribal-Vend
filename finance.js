@@ -82,11 +82,6 @@ export const SLOTS = [
   { slot: "58", item: "Monster Energy", cost: 1.53, price: 2.75, sold: 108, profit: 113.94 },
 ];
 
-export const LOAN = {
-  name: "Wendle loan", principal: 13000, apr: 0.10, termMonths: 96, payment: 197.26,
-  started: "Oct 2024", paidCount: 21, balance: 10627.97, paidToDate: 4439.73,
-  principalPaid: 2372.03, interestPaid: 2067.70, monthsLeft: 72, remainingInterest: 3538.65,
-  payoff: "2032", asOf: "Jun 2026"
-};
+// The loan now lives in loan.js, parsed from the real amortization schedule.
 
 export const WINDOW_LABEL = "Feb 21 – Jul 27, 2026";

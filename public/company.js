@@ -427,6 +427,39 @@ export async function renderCompany(root) {
   fr.appendChild(el(`<div class="row"><div class="nm"><b>Total</b></div><div class="val">${money2(fixed)}</div></div>`));
   fc.appendChild(fr); root.appendChild(fc);
 
+  // ---- loan ----
+  if (d.loan) {
+    const L = d.loan;
+    const payoff = new Date(L.payoffDate + "T12:00:00");
+    const lc = el(`<div class="card"><div class="ct">Wendle loan</div><div class="cs">$13,000 at 10% · ${money2(L.payment)} a month · payment ${L.monthNumber} of 93</div></div>`);
+    lc.appendChild(el(`<div style="margin:6px 2px 2px">
+      <div style="display:flex;justify-content:space-between;align-items:baseline">
+        <span style="font-size:26px;font-weight:800;letter-spacing:-.02em">${money(L.balance)}</span>
+        <span style="font-size:12px;color:var(--muted)">still owed</span>
+      </div>
+      <div style="height:9px;background:var(--surface-2);border-radius:99px;overflow:hidden;margin:10px 0 6px">
+        <div style="height:100%;width:${L.pctPaid.toFixed(1)}%;background:var(--s3);border-radius:99px"></div>
+      </div>
+      <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--muted)">
+        <span>${L.pctPaid.toFixed(0)}% of principal paid</span>
+        <span>${L.paymentsLeft} payments left</span>
+      </div>
+    </div>`));
+    const lr = el(`<div class="rows" style="margin-top:12px"></div>`);
+    lr.appendChild(el(`<div class="row"><div class="nm">Paid off by<div class="mt">if you keep paying monthly</div></div><div class="val">${payoff.toLocaleDateString([], { month: "short", year: "numeric" })}</div></div>`));
+    lr.appendChild(el(`<div class="row"><div class="nm">Interest paid so far</div><div class="val">${money(L.interestPaid)}</div></div>`));
+    lr.appendChild(el(`<div class="row"><div class="nm">Interest still to come</div><div class="val down">${money(L.interestLeft)}</div></div>`));
+    lr.appendChild(el(`<div class="row"><div class="nm">Total interest on the loan</div><div class="val">${money(L.totalInterest)}</div></div>`));
+    lc.appendChild(lr);
+    root.appendChild(lc);
+
+    if (L.overpayWarning > 0) {
+      root.appendChild(el(`<div class="alert"><b>Stop after payment 93, not 96.</b> The schedule lists 96 payments but the balance hits zero at 93. Paying all 96 hands over about ${money(L.overpayWarning * L.payment)} you don't owe.</div>`));
+    }
+    const loanShare = (L.payment / (last.revenue || 1)) * 100;
+    root.appendChild(el(`<div class="alert" style="border-left-color:var(--accent)">The loan takes <b>${loanShare.toFixed(0)}%</b> of a month like ${last.m}. It's ${money(L.payment)} of your ${money(fixed)} fixed costs — the single biggest one.</div>`));
+  }
+
   const breakeven = fixed / (1 - 0.52);
   root.appendChild(el(`<div class="alert" style="border-left-color:var(--accent)"><b>Break-even is ${money(breakeven)}/month</b> in sales. Last month you did ${money(last.revenue)} — ${last.revenue >= breakeven ? `${money(last.revenue - breakeven)} above it.` : `${money(breakeven - last.revenue)} short.`}</div>`));
 
