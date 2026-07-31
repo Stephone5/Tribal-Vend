@@ -12,7 +12,7 @@ import { costFor, costInfo, setCostOverrides, categoryFor, SOLD_BY_SLOT, SALES_W
 import { CLOSET_SEED } from "./closet-seed.js";
 import { auditData } from "./audit.js";
 import { LOAN, loanStatus } from "./loan.js";
-import { pullSales, summarize, startOfWeek, easternNow } from "./sales.js";
+import { pullSales, pullSalesRange, summarize, startOfWeek, easternNow } from "./sales.js";
 import { getDoc, setDoc, storeReady } from "./store.js";
 import { SLOTS, WINDOW_LABEL } from "./finance.js";
 
@@ -61,12 +61,37 @@ const SALES_LOOKBACK_DAYS = 120;
 let liveCache = { at: 0, data: null };
 let salesCache = { at: 0, sum: null };
 
+// Full history since the first sale. The old part never changes, so it's pulled
+// once and kept; only the recent window is re-pulled on the normal cadence.
+const HISTORY_START = new Date("2024-09-01");
+const RECENT_DAYS = 60;
+let historyCache = { at: 0, txns: null };
+
 async function getSales(force = false) {
   if (!force && salesCache.sum && Date.now() - salesCache.at < SALES_TTL) return salesCache.sum;
-  const end = new Date();
-  const start = new Date(Date.now() - SALES_LOOKBACK_DAYS * 864e5);
-  const txns = await pullSales(start, end);
-  const sum = summarize(txns, costFor);
+
+  const cutoff = new Date(Date.now() - RECENT_DAYS * 864e5);
+
+  // Archive: everything older than the recent window. Refreshed daily at most.
+  if (!historyCache.txns || Date.now() - historyCache.at > 24 * 60 * 60 * 1000) {
+    try {
+      historyCache = { at: Date.now(), txns: await pullSalesRange(HISTORY_START, cutoff) };
+    } catch (e) {
+      if (!historyCache.txns) historyCache = { at: Date.now(), txns: [] };
+    }
+  }
+
+  const recent = await pullSalesRange(cutoff, new Date());
+  const seen = new Set();
+  const all = [];
+  for (const r of [...(historyCache.txns || []), ...recent]) {
+    const k = `${r.when.getTime()}|${r.machine}|${r.slot}|${r.amount}`;
+    if (seen.has(k)) continue;
+    seen.add(k); all.push(r);
+  }
+  all.sort((a, b) => a.when - b.when);
+
+  const sum = summarize(all, costFor);
   salesCache = { at: Date.now(), sum };
   return sum;
 }
@@ -135,6 +160,7 @@ async function buildLive(force = false) {
       thisMonth: sales.thisMonth, lastMonth: sales.lastMonth,
       weekStart: sales.weekStart, weeks: sales.weeks, days: sales.days,
       byDow: sales.byDow, byHour: sales.byHour, byItem: sales.byItem.slice(0, 40),
+      months: sales.months, firstSale: sales.firstSale,
       txnCount: sales.txnCount, spanDays: Math.round(spanDays),
       freshAt: salesCache.at,
     } : null,

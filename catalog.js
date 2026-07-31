@@ -126,7 +126,9 @@ export const FIXED_COSTS = [
 export const COGS_RATIO = 0.52;
 
 export function buildPL() {
-  return MONTHLY.filter(m => m.card > 0).map(m => {
+  // Keep every month with any money moving — dropping the early ones hid the
+  // start of the business and made seasonality impossible to see.
+  return MONTHLY.filter(m => (m.card + m.cash) > 0 || m.debits > 0).map(m => {
     const revenue = m.card + m.cash;
     const cogs = revenue * COGS_RATIO;
     const gross = revenue - cogs;

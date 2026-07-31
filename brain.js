@@ -89,7 +89,7 @@ function askContext(live, closet) {
   const lines = [];
   const S = live?.sales;
   if (S) {
-    lines.push(`SALES (live from AirVend, ${S.txnCount} transactions over ${S.spanDays} days, weeks run Sun-Sat)`);
+    lines.push(`SALES (live from AirVend — ${S.txnCount} transactions covering ${S.spanDays} days${S.firstSale ? `, back to ${S.firstSale.slice(0, 10)}` : ""}. Weeks run Sun-Sat.)`);
     lines.push(`This week so far: $${S.thisWeek.revenue.toFixed(2)} revenue, $${S.thisWeek.profit.toFixed(2)} profit, ${S.thisWeek.units} units`);
     lines.push(`Last week total: $${S.lastWeek.revenue.toFixed(2)} revenue, $${S.lastWeek.profit.toFixed(2)} profit, ${S.lastWeek.units} units`);
     lines.push(`This month: $${S.thisMonth.revenue.toFixed(2)} rev / $${S.thisMonth.profit.toFixed(2)} profit. Last month: $${S.lastMonth.revenue.toFixed(2)} rev / $${S.lastMonth.profit.toFixed(2)} profit`);
@@ -116,8 +116,12 @@ function askContext(live, closet) {
   }
   const pl = live?.pl || [];
   if (pl.length) {
-    lines.push(`\nP&L BY MONTH (revenue / product cost / gross / fixed / net):`);
-    pl.slice(-8).forEach(p => lines.push(`${p.m}: $${Math.round(p.revenue)} / $${Math.round(p.cogs)} / $${Math.round(p.gross)} / $${Math.round(p.fixed)} / $${Math.round(p.net)} (bank balance $${p.balance})`));
+    lines.push(`\nP&L, EVERY MONTH ON RECORD (revenue / product cost / gross / fixed / net):`);
+    pl.forEach(p => lines.push(`${p.m}: $${Math.round(p.revenue)} / $${Math.round(p.cogs)} / $${Math.round(p.gross)} / $${Math.round(p.fixed)} / $${Math.round(p.net)} (bank balance $${p.balance})`));
+  }
+  if (S?.months?.length) {
+    lines.push(`\nMACHINE SALES BY MONTH (from real transactions, first sale ${S.firstSale ? S.firstSale.slice(0, 10) : "n/a"}) — use this for seasonality:`);
+    S.months.forEach(m => lines.push(`${m.m}: $${m.revenue.toFixed(2)} revenue, $${m.profit.toFixed(2)} profit, ${m.units} units`));
   }
   if (live?.fixedCosts) lines.push(`\nFIXED MONTHLY COSTS: ${live.fixedCosts.map(c => `${c.name} $${c.amount.toFixed(2)}`).join("; ")}`);
   if (live?.loan) lines.push(`\nLOAN: ${JSON.stringify(live.loan)}`);

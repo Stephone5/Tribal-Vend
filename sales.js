@@ -76,6 +76,33 @@ export async function pullSales(start, end) {
   return parseCsv(csv);
 }
 
+// AirVend refuses windows much beyond a year, so long ranges are pulled in
+// chunks and stitched together. This is how we get the full history back to
+// the first sale (Oct 2024) instead of a rolling 120-day slice.
+const CHUNK_DAYS = 150;
+
+export async function pullSalesRange(start, end) {
+  const out = [];
+  const seen = new Set();
+  let cur = new Date(start);
+  const stop = new Date(end);
+  while (cur < stop) {
+    const next = new Date(Math.min(cur.getTime() + CHUNK_DAYS * 864e5, stop.getTime()));
+    let rows = [];
+    try { rows = await pullSales(cur, next); }
+    catch (e) { /* one bad chunk shouldn't lose the rest of the history */ }
+    for (const r of rows) {
+      // de-dupe across chunk boundaries
+      const k = `${r.when.getTime()}|${r.machine}|${r.slot}|${r.amount}`;
+      if (seen.has(k)) continue;
+      seen.add(k); out.push(r);
+    }
+    cur = next;
+  }
+  out.sort((a, b) => a.when - b.when);
+  return out;
+}
+
 // Roll transactions into everything the app needs.
 export function summarize(txns, costOf) {
   const now = easternNow();
@@ -117,6 +144,17 @@ export function summarize(txns, costOf) {
   }
 
   const days = Object.values(byDay).sort((a, b) => a.d.localeCompare(b.d));
+
+  // month-by-month from real transactions — the seasonal view
+  const byMonth = {};
+  for (const t of txns) {
+    const k = `${t.when.getFullYear()}-${String(t.when.getMonth() + 1).padStart(2, "0")}`;
+    if (!byMonth[k]) byMonth[k] = { m: k, revenue: 0, profit: 0, units: 0 };
+    const c = costOf(t.item);
+    byMonth[k].revenue += t.amount; byMonth[k].units += 1;
+    if (c != null) byMonth[k].profit += t.amount - c;
+  }
+  const months = Object.values(byMonth).sort((a, b) => a.m.localeCompare(b.m));
   // week-by-week series (Sunday buckets)
   const weeks = {};
   for (const t of txns) {
@@ -131,7 +169,8 @@ export function summarize(txns, costOf) {
     weekStart: wkStart.toISOString(),
     bySlot: Object.values(bySlot),
     byItem: Object.values(byItem).sort((a, b) => b.profit - a.profit),
-    days,
+    days, months,
+    firstSale: txns.length ? txns.reduce((a, t) => t.when < a ? t.when : a, txns[0].when).toISOString() : null,
     weeks: Object.values(weeks).sort((a, b) => a.w.localeCompare(b.w)),
     byDow, byHour,
     txnCount: txns.length,
