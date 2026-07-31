@@ -70,6 +70,83 @@ function businessContext() {
   return `MEALS & DRINKS per-slot performance (${WINDOW_LABEL}):\n${lines}\n\nFixed monthly costs: ${fixed}\n\nRecent months (bank):\n${recent}`;
 }
 
+// ---- Conversational mode: Stephen asking the desk questions ----
+const ASK_SYSTEM = `${SYSTEM}
+
+You are talking directly with Stephen, the owner. He is the CEO; you run the desk — pricing, planogram, purchasing, and the numbers. Speak like a sharp operator who already knows his business, not like a chatbot.
+
+Rules for these conversations:
+- Answer the question asked, then stop. No preamble, no restating the question, no "great question".
+- Lead with the answer or the number. Detail after.
+- Every figure you cite must come from the DATA block. Never invent sales, costs, or dates. If the data doesn't cover something, say so in one line.
+- Give a recommendation, not a menu of options. If you're unsure, say what you'd do and why.
+- Keep it short — a few sentences unless he asks for depth. Use plain language, no jargon, no bullet-point walls unless a list is genuinely the clearest form.
+- Money in dollars, plainly. Round sensibly.
+- Weeks run Sunday to Saturday.
+- He is winding down the Pennsylvania route and relocating the machines to Oklahoma, where locations are lined up. Factor that into advice: don't tell him to invest in PA growth or buy deep inventory he'd have to move.`;
+
+function askContext(live, closet) {
+  const lines = [];
+  const S = live?.sales;
+  if (S) {
+    lines.push(`SALES (live from AirVend, ${S.txnCount} transactions over ${S.spanDays} days, weeks run Sun-Sat)`);
+    lines.push(`This week so far: $${S.thisWeek.revenue.toFixed(2)} revenue, $${S.thisWeek.profit.toFixed(2)} profit, ${S.thisWeek.units} units`);
+    lines.push(`Last week total: $${S.lastWeek.revenue.toFixed(2)} revenue, $${S.lastWeek.profit.toFixed(2)} profit, ${S.lastWeek.units} units`);
+    lines.push(`This month: $${S.thisMonth.revenue.toFixed(2)} rev / $${S.thisMonth.profit.toFixed(2)} profit. Last month: $${S.lastMonth.revenue.toFixed(2)} rev / $${S.lastMonth.profit.toFixed(2)} profit`);
+    const dow = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+    lines.push(`Sales by weekday: ${S.byDow.map((v, i) => `${dow[i]} $${Math.round(v)}`).join(", ")}`);
+    lines.push(`Recent weekly profit: ${S.weeks.slice(-8).map(w => `${w.w} $${Math.round(w.profit)}`).join(", ")}`);
+  }
+  for (const m of live?.machines || []) {
+    lines.push(`\nMACHINE: ${m.name} (${m.slots.length} slots)`);
+    lines.push(`slot | product | price | cost | on-hand/par | units(${S ? S.spanDays + "d" : "window"}) | units/day | $/day at today's price | notes`);
+    for (const s of m.slots) {
+      const notes = [];
+      if (s.belowCost) notes.push("BELOW COST");
+      if (s.stockedOut) notes.push("SOLD OUT NOW");
+      if (s.priceChanged) notes.push(`price was $${(s.avgPrice || 0).toFixed(2)}`);
+      lines.push(`${s.slot} | ${s.product} | $${s.price.toFixed(2)} | ${s.cost == null ? "unknown" : "$" + s.cost.toFixed(2)} | ${s.onHand}/${s.max} | ${s.units} | ${(s.unitsPerDay || 0).toFixed(2)} | ${s.perDay == null ? "n/a" : "$" + s.perDay.toFixed(2)}${notes.length ? " | " + notes.join("; ") : ""}`);
+    }
+  }
+  if (closet?.items?.length) {
+    lines.push(`\nCLOSET (backstock you already own):`);
+    closet.items.forEach(i => lines.push(`${i.name} (${i.folder}): ${i.qty} units @ $${Number(i.price).toFixed(2)}${i.min !== "" && i.min != null ? `, low at ${i.min}` : ""}`));
+    const tv = closet.items.reduce((a, i) => a + (Number(i.qty) || 0) * (Number(i.price) || 0), 0);
+    lines.push(`Closet total: ${closet.items.reduce((a, i) => a + (Number(i.qty) || 0), 0)} units, $${tv.toFixed(2)} tied up`);
+  }
+  const pl = live?.pl || [];
+  if (pl.length) {
+    lines.push(`\nP&L BY MONTH (revenue / product cost / gross / fixed / net):`);
+    pl.slice(-8).forEach(p => lines.push(`${p.m}: $${Math.round(p.revenue)} / $${Math.round(p.cogs)} / $${Math.round(p.gross)} / $${Math.round(p.fixed)} / $${Math.round(p.net)} (bank balance $${p.balance})`));
+  }
+  if (live?.fixedCosts) lines.push(`\nFIXED MONTHLY COSTS: ${live.fixedCosts.map(c => `${c.name} $${c.amount.toFixed(2)}`).join("; ")}`);
+  if (live?.loan) lines.push(`\nLOAN: ${JSON.stringify(live.loan)}`);
+  return lines.join("\n");
+}
+
+export async function askBrain(messages, live, closet) {
+  const client = new Anthropic();
+  const ctx = askContext(live, closet);
+  const history = (messages || []).filter(m => m && m.content).slice(-16).map(m => ({
+    role: m.role === "assistant" ? "assistant" : "user",
+    content: String(m.content).slice(0, 4000),
+  }));
+  if (!history.length) history.push({ role: "user", content: "Give me a one-line read on the business right now." });
+
+  const resp = await client.messages.create({
+    model: MODEL,
+    max_tokens: 4000,
+    thinking: { type: "adaptive" },
+    system: [
+      { type: "text", text: ASK_SYSTEM },
+      { type: "text", text: `CURRENT DATA (as of ${new Date().toLocaleString("en-US", { timeZone: "America/New_York" })} Eastern):\n\n${ctx}` },
+    ],
+    output_config: { effort: "medium" },
+    messages: history,
+  });
+  return resp.content.filter(b => b.type === "text").map(b => b.text).join("\n").trim();
+}
+
 export async function runBrain(run) {
   const client = new Anthropic(); // reads ANTHROPIC_API_KEY from env
 

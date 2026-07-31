@@ -251,11 +251,39 @@ export async function renderCompany(root) {
     mv.appendChild(rws); root.appendChild(mv);
   }
 
-  const worst = prods.filter(p => p.units > 0).slice(-6).reverse();
-  const lowCard = el(`<div class="card"><div class="ct">Weakest slots</div><div class="cs">Lowest profit per day — candidates to replace</div></div>`);
-  const maxW = Math.max(...worst.map(p => Math.abs(p.perDay)), 0.01);
-  worst.forEach(p => lowCard.appendChild(barRow(p.k, p.perDay, maxW, "var(--s4)", v => "$" + v.toFixed(2) + "/d")));
-  root.appendChild(lowCard);
+  // Weakest = genuinely slow at today's price. Sold-out slots are constrained,
+  // not weak — they're listed separately so a stockout never looks like failure.
+  const soldOut = known.filter(s => s.stockedOut && s.units > 0);
+  const soldOutNames = new Set(soldOut.map(s => shortName(s.product)));
+  const worst = prods.filter(p => p.units > 0 && !soldOutNames.has(p.k)).slice(-6).reverse();
+  if (worst.length) {
+    const lowCard = el(`<div class="card"><div class="ct">Slowest slots</div><div class="cs">Least profit per day at today's price — candidates to replace</div></div>`);
+    const maxW = Math.max(...worst.map(p => Math.abs(p.perDay)), 0.01);
+    worst.forEach(p => lowCard.appendChild(barRow(p.k, p.perDay, maxW, "var(--s4)", v => "$" + v.toFixed(2) + "/d")));
+    root.appendChild(lowCard);
+  }
+  if (soldOut.length) {
+    const so = el(`<div class="card"><div class="ct">Sold out — losing sales <span class="pill warn">${soldOut.length}</span></div><div class="cs">These emptied before you got back. Not weak — starved. Raise par.</div></div>`);
+    const rr = el(`<div class="rows"></div>`);
+    soldOut.sort((a, b) => b.unitsPerDay - a.unitsPerDay).forEach(s => rr.appendChild(el(
+      `<div class="row"><div class="nm">${esc(shortName(s.product))}<div class="mt">${esc(s.machine)} · slot ${s.slot} · sells ${s.unitsPerDay.toFixed(2)}/day · par ${s.max}</div></div><div class="val">${(s.max / Math.max(s.unitsPerDay, .01)).toFixed(1)}d</div></div>`)));
+    so.appendChild(rr);
+    so.appendChild(el(`<div class="cs" style="margin:10px 2px 2px">Right column is how many days that par lasts. Anything under 7 runs dry before your weekly visit.</div>`));
+    root.appendChild(so);
+  }
+
+  // Price drift — realized price vs what the machine charges today
+  const drift = known.filter(s => s.priceChanged && s.units >= 3)
+    .sort((a, b) => Math.abs(b.price - b.avgPrice) * b.units - Math.abs(a.price - a.avgPrice) * a.units);
+  if (drift.length) {
+    const dc = el(`<div class="card"><div class="ct">Price changed since these sales</div><div class="cs">History is at the old price — judge these on the new one</div></div>`);
+    const dr = el(`<div class="rows"></div>`);
+    drift.slice(0, 8).forEach(s => {
+      const better = s.price > s.avgPrice;
+      dr.appendChild(el(`<div class="row"><div class="nm">${esc(shortName(s.product))}<div class="mt">slot ${s.slot} · ${s.units} sold at ${money2(s.avgPrice)} avg</div></div><div class="val ${better ? "up" : "down"}">${money2(s.avgPrice)} → ${money2(s.price)}</div></div>`));
+    });
+    dc.appendChild(dr); root.appendChild(dc);
+  }
 
   // below cost — real ones only
   const below = known.filter(s => s.belowCost);

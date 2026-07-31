@@ -1,6 +1,7 @@
 import { MACHINES } from "./data.js";
 import { renderCloset } from "./closet.js";
 import { renderCompany } from "./company.js";
+import { renderChat } from "./chat.js";
 import { apiFetch, setPass } from "./api.js";
 
 // Financial data loads from the server (behind the passcode), not the public bundle.
@@ -28,8 +29,10 @@ document.querySelectorAll("nav button").forEach(b=>{
     $("#company").hidden = tab!=="company";
     $("#runs").hidden = tab!=="runs";
     $("#closet").hidden = tab!=="closet";
+    $("#chat").hidden = tab!=="chat";
     if(tab==="closet") renderCloset($("#closet"));
     if(tab==="company") renderCompany($("#company"));
+    if(tab==="chat") renderChat($("#chat"));
     window.scrollTo(0,0);
   };
 });

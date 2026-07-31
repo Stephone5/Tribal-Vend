@@ -3,8 +3,8 @@
 // as a stale mix of old and new versions — that mismatch is what causes a blank
 // white screen. Cache is the offline fallback only. Icons stay cache-first.
 
-const CACHE = "tv-v12";
-const SHELL = ["./", "./index.html", "./app.js", "./data.js", "./closet.js", "./api.js", "./manifest.webmanifest"];
+const CACHE = "tv-v13";
+const SHELL = ["./", "./index.html", "./app.js", "./data.js", "./closet.js", "./company.js", "./chat.js", "./api.js", "./manifest.webmanifest"];
 
 self.addEventListener("install", e => {
   e.waitUntil(

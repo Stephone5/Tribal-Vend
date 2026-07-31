@@ -6,7 +6,7 @@ import "dotenv/config";
 import express from "express";
 import path from "path";
 import { fileURLToPath } from "url";
-import { runBrain } from "./brain.js";
+import { runBrain, askBrain } from "./brain.js";
 import { writeOnHand, getMachineLive } from "./airvend.js";
 import { costFor, categoryFor, SOLD_BY_SLOT, SALES_WINDOW, MONTHLY, FIXED_COSTS, buildPL } from "./catalog.js";
 import { CLOSET_SEED } from "./closet-seed.js";
@@ -96,17 +96,28 @@ async function buildLive(force = false) {
       const cost = costFor(s.product);
       const rec = live[s.slot];
       const units = rec ? rec.units : (fallback[s.slot] ?? 0);
+      // marginEach uses the CURRENT price — this is forward-looking economics.
       const marginEach = cost == null ? null : s.price - cost;
+      // Historical profit is what actually happened, at whatever price was set then.
       const profit = rec ? rec.profit : (marginEach == null ? null : marginEach * units);
+      // Realized average price tells us whether the price has changed since.
+      const avgPrice = rec && rec.units ? rec.revenue / rec.units : null;
+      const priceChanged = avgPrice != null && Math.abs(avgPrice - s.price) > 0.05;
+      const perDay = units / spanDays;                       // units/day velocity
+      const forwardPerDay = marginEach == null ? null : marginEach * perDay; // $/day at today's price
       return {
         slot: s.slot, product: s.product, price: s.price, cost,
         onHand: s.onHand, max: s.max, units,
         week: rec ? rec.week : 0, prevWeek: rec ? rec.prevWeek : 0,
         category: categoryFor(s.product),
         marginEach, profit,
-        perDay: profit == null ? null : profit / spanDays,
+        avgPrice, priceChanged,
+        unitsPerDay: perDay,
+        perDay: forwardPerDay,                                // what the slot earns going forward
+        histPerDay: profit == null ? null : profit / spanDays, // what it earned historically
         fillPct: s.max ? Math.round((s.onHand / s.max) * 100) : 0,
         belowCost: marginEach != null && marginEach <= 0,
+        stockedOut: s.onHand === 0,
       };
     });
     machines.push({ ...m, slots: rows });
@@ -137,6 +148,24 @@ app.get("/api/live", async (req, res) => {
   } catch (err) {
     if (liveCache.data) return res.json({ ...liveCache.data, stale: true });
     res.status(502).json({ error: "live_failed", message: err?.message || "Couldn't reach AirVend." });
+  }
+});
+
+// ---- Ask: talk to the brain with the whole business in context ----
+app.post("/api/ask", async (req, res) => {
+  if (!process.env.ANTHROPIC_API_KEY) {
+    return res.status(503).json({ error: "no_key", message: "The brain isn't connected — no API key on the server." });
+  }
+  try {
+    const [live, closet] = await Promise.all([
+      (liveCache.data && Date.now() - liveCache.at < INV_TTL) ? liveCache.data : buildLive().then(d => { liveCache = { at: Date.now(), data: d }; return d; }),
+      getDoc(CLOSET_KEY).catch(() => null),
+    ]);
+    const reply = await askBrain(req.body?.messages || [], live, closet);
+    res.json({ reply });
+  } catch (err) {
+    console.error("ask error:", err?.message || err);
+    res.status(502).json({ error: "ask_failed", message: err?.message || "The brain hit an error." });
   }
 });
 
