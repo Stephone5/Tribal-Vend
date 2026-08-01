@@ -284,13 +284,22 @@ app.post("/api/ask", async (req, res) => {
 
 // Closet (inventory) — durable, synced across devices.
 const CLOSET_KEY = "closet:default";
+const SEEDVER_KEY = "closet:seedver";
+// Bump this string whenever the seed should be force-loaded over the stored
+// closet (a fresh reload from Sortly). It only fires once per new value — after
+// that, your own edits persist untouched.
+const SEED_VERSION = "2026-08-01-full-41";
+
 app.get("/api/closet", async (_req, res) => {
   try {
     let doc = await getDoc(CLOSET_KEY);
-    // First run on a fresh install: load the Sortly import so the closet isn't empty.
-    if (!doc || !Array.isArray(doc.items) || doc.items.length === 0) {
+    const ver = await getDoc(SEEDVER_KEY).catch(() => null);
+    const empty = !doc || !Array.isArray(doc.items) || doc.items.length === 0;
+    // Seed on first run, or force-reload once when SEED_VERSION changes.
+    if (empty || ver !== SEED_VERSION) {
       doc = JSON.parse(JSON.stringify(CLOSET_SEED));
       await setDoc(CLOSET_KEY, doc);
+      await setDoc(SEEDVER_KEY, SEED_VERSION);
     }
     res.json(doc);
   } catch (err) { res.status(502).json({ error: "store_failed", message: err?.message || "Storage read failed." }); }
