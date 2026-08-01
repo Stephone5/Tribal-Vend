@@ -177,15 +177,18 @@ async function buildLive(force = false) {
   const cItems = (closet && closet.items) || [];
   const closetInventory = cItems.reduce((a, i) => a + (Number(i.qty) || 0) * (Number(i.price) || 0), 0);
   const closetUnits = cItems.reduce((a, i) => a + (Number(i.qty) || 0), 0);
-  const machineInventory = machines.flatMap(m => m.slots)
-    .reduce((a, s) => a + (s.cost != null ? (Number(s.onHand) || 0) * s.cost : 0), 0);
+  // Inventory = the Sortly count and NOTHING else. Stephen updates Sortly at
+  // every fill, so its 810 units / $591.20 already covers BOTH the machines and
+  // the closet. Adding AirVend's machine on-hand on top of it double-counts —
+  // that was the $730.90 bug.
+  const inventory = closetInventory;
   const bank = MONTHLY[MONTHLY.length - 1] || {};
   const loan = loanStatus();
   const equipment = 13000; // the two machines, at financed cost
-  const assets = (bank.balance || 0) + machineInventory + closetInventory + equipment;
+  const assets = (bank.balance || 0) + inventory + equipment;
   const balanceSheet = {
     cash: bank.balance || 0, cashAsOf: bank.m || "",
-    machineInventory, closetInventory, closetUnits, equipment,
+    inventory, closetInventory, closetUnits, equipment,
     assets, loanBalance: loan.balance, liabilities: loan.balance,
     equity: assets - loan.balance,
   };

@@ -154,17 +154,33 @@ const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct
 // lumps), so they understate the month a sale actually occurred. We keep the
 // bank figures only for the reconciliation columns (deposits, debits, balance).
 // Months before the feed began fall back to bank deposits × COGS_RATIO.
+const monthKey = label => { const [mo, yy] = label.split(" "); return (2000 + parseInt(yy, 10)) * 12 + MON.indexOf(mo); };
+
 export function buildPL(salesMonths) {
+  const opFixed = FIXED_COSTS.reduce((a, c) => a + c.amount, 0);
+  const bankBy = {};
+  MONTHLY.forEach(m => { bankBy[m.m] = m; });
   const txnBy = {};
   (salesMonths || []).forEach(sm => {
     const label = `${MON[+sm.m.split("-")[1] - 1]} ${sm.m.slice(2, 4)}`;
     txnBy[label] = sm;
   });
-  const opFixed = FIXED_COSTS.reduce((a, c) => a + c.amount, 0);
-  // Keep every month with any money moving — including the startup month.
-  return MONTHLY.filter(m => (m.card + m.cash) > 0 || m.debits > 0).map(m => {
-    const tx = txnBy[m.m];
-    const deposits = m.card + m.cash;
+
+  // Union of every month with money moving — from the bank statements AND the
+  // live sales feed. The feed runs past where the bank data ends (bank stops
+  // Jun 26; sales continue), so this keeps the P&L current instead of frozen at
+  // the last bank statement.
+  const labels = [...new Set([...Object.keys(bankBy), ...Object.keys(txnBy)])]
+    .filter(lbl => {
+      const b = bankBy[lbl], t = txnBy[lbl];
+      return (t && t.revenue > 0) || (b && ((b.card + b.cash) > 0 || b.debits > 0));
+    })
+    .sort((a, b) => monthKey(a) - monthKey(b));
+
+  return labels.map(lbl => {
+    const m = bankBy[lbl] || {};
+    const tx = txnBy[lbl];
+    const deposits = (m.card || 0) + (m.cash || 0);
     let revenue, cogs, gross, source;
     if (tx && tx.revenue > 0) {
       revenue = tx.revenue; gross = tx.profit; cogs = revenue - gross; source = "sales";
@@ -172,12 +188,13 @@ export function buildPL(salesMonths) {
       revenue = deposits; cogs = revenue * COGS_RATIO; gross = revenue - cogs; source = "bank";
     }
     // Loan INTEREST for this month is an expense; principal is not.
-    const [monStr, yy] = m.m.split(" ");
+    const [monStr, yy] = lbl.split(" ");
     const loanInterest = interestForMonth(2000 + parseInt(yy, 10), MON.indexOf(monStr) + 1);
     const fixed = opFixed + loanInterest;
     return {
-      m: m.m, revenue, cogs, gross, fixed, opFixed, loanInterest,
-      net: gross - fixed, balance: m.balance, debits: m.debits, deposits, source,
+      m: lbl, revenue, cogs, gross, fixed, opFixed, loanInterest,
+      net: gross - fixed, balance: m.balance != null ? m.balance : null,
+      debits: m.debits || 0, deposits, source,
     };
   });
 }

@@ -11,6 +11,24 @@ const pct = n => (n >= 0 ? "+" : "") + n.toFixed(0) + "%";
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const shortName = s => String(s || "").replace(/^(Meals|Drinks|Crackers)\s*[-:]\s*/i, "").replace(/\s*\d+(\.\d+)?\s*(oz|fl oz|ct|count|-Ounce|piece|pk).*$/i, "").replace(/,.*$/, "").trim().slice(0, 26);
 
+const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const parseMonth = m => { const [mo, yy] = String(m).split(" "); return { year: 2000 + (+yy), month: MON.indexOf(mo) }; };
+
+// Filter the P&L rows to a period. "Last month" = the most recent COMPLETE
+// calendar month; "This year" = year-to-date; "Last year" = the full prior
+// calendar year; "All time" = everything.
+function filterPL(pl, period) {
+  const now = new Date(), y = now.getFullYear(), mi = now.getMonth();
+  if (period === "all") return pl;
+  if (period === "ytd") return pl.filter(p => parseMonth(p.m).year === y);
+  if (period === "lastyear") return pl.filter(p => parseMonth(p.m).year === y - 1);
+  if (period === "lastmonth") {
+    let lm = mi - 1, ly = y; if (lm < 0) { lm = 11; ly--; }
+    return pl.filter(p => { const q = parseMonth(p.m); return q.year === ly && q.month === lm; });
+  }
+  return pl;
+}
+
 const LIVE_LSK = "tv_live_cache_v2";
 const GROSS = 0.48;            // gross-margin ratio used in the P&L
 const EMP_RATE = 15, EMP_HRS = 4; // $/hr and hours/week for the "can I hire" math
@@ -171,8 +189,9 @@ function paint(root, d, stale) {
   // them. Once the OK bank is open, this has to be wired up.
   root.appendChild(bankFeedBanner());
 
-  // Profit & loss — QuickBooks-style hierarchy, then a month-by-month detail.
-  if (pl.length) root.appendChild(plCard(pl));
+  // Profit & loss — period selector (Last month / This year / Last year / All
+  // time) over a QuickBooks-style hierarchy.
+  if (pl.length) root.appendChild(plSection(pl));
 
   // Balance sheet — QuickBooks-style grouping.
   if (d.balanceSheet) root.appendChild(balanceSheetCard(d.balanceSheet));
@@ -285,19 +304,40 @@ function bankFeedBanner() {
     <span style="flex:1;font-size:12.5px;color:#8f342c;font-weight:600;line-height:1.4">When you open the new bank in Oklahoma, wire its data into this app — Plaid, emailed statements, or a periodic CSV. Until then these numbers only move as fast as the data you feed in.</span></div>`);
 }
 
+// ---------- P&L with a period selector ----------
+function plSection(pl) {
+  const wrap = el(`<div></div>`);
+  const bar = el(`<div class="period-bar"></div>`);
+  const host = el(`<div></div>`);
+  const periods = [["lastmonth", "Last month"], ["ytd", "This year"], ["lastyear", "Last year"], ["all", "All time"]];
+  let cur = "ytd";
+  const draw = () => {
+    host.innerHTML = "";
+    const rows = filterPL(pl, cur);
+    const label = periods.find(p => p[0] === cur)[1];
+    host.appendChild(rows.length ? plCard(rows, label)
+      : el(`<div class="note">No sales on record for ${label.toLowerCase()} yet.</div>`));
+    [...bar.children].forEach((b, i) => b.classList.toggle("on", periods[i][0] === cur));
+  };
+  periods.forEach(([k, lab]) => { const b = el(`<button class="period-btn">${lab}</button>`); b.onclick = () => { cur = k; draw(); }; bar.appendChild(b); });
+  wrap.appendChild(bar); wrap.appendChild(host); draw();
+  return wrap;
+}
+
 // ---------- QuickBooks-style P&L ----------
-function plCard(pl) {
+function plCard(pl, periodLabel) {
   const N = pl.length;
   const sum = k => pl.reduce((a, p) => a + (p[k] || 0), 0);
   const sales = sum("revenue"), cogs = sum("cogs"), gross = sum("gross");
   const loanInt = sum("loanInterest"), opFixed = sum("opFixed");
   const expenses = opFixed + loanInt, net = gross - expenses;
-  const span = `${pl[0].m} – ${pl[N - 1].m}`;
+  const span = N === 1 ? pl[0].m : `${pl[0].m} – ${pl[N - 1].m}`;
 
   // one fixed-cost line = its monthly amount × months on record
   const opLines = (window.__fixedCosts || []).map(c => ({ name: c.name, amt: c.amount * N }));
 
-  const c = el(`<div class="card"><div class="ct">Profit &amp; loss</div><div class="cs">${esc(span)} · ${money(net)} kept on ${money(sales)} in sales</div></div>`);
+  const sub = periodLabel ? `${periodLabel} · ${span}` : span;
+  const c = el(`<div class="card"><div class="ct">Profit &amp; loss</div><div class="cs">${esc(sub)} · ${money(net)} kept on ${money(sales)}</div></div>`);
   const t = el(`<div class="qb"></div>`);
   const grp = (label, val, bold) => el(`<div class="qb-h ${bold ? "b" : ""}"><span>${esc(label)}</span><span>${money2(val)}</span></div>`);
   const line = (label, val, neg) => el(`<div class="qb-l"><span>${esc(label)}</span><span${neg ? ' class="neg"' : ""}>${neg ? "−" : ""}${money2(Math.abs(val))}</span></div>`);
@@ -328,7 +368,7 @@ function plCard(pl) {
 
 // ---------- QuickBooks-style balance sheet ----------
 function balanceSheetCard(b) {
-  const inventory = (b.machineInventory || 0) + (b.closetInventory || 0);
+  const inventory = b.inventory != null ? b.inventory : (b.closetInventory || 0);
   const currentAssets = (b.cash || 0) + inventory;
   const c = el(`<div class="card"><div class="ct">Balance sheet</div><div class="cs">What the business owns vs owes · as of ${esc(b.cashAsOf || "now")}</div></div>`);
   const t = el(`<div class="qb"></div>`);
@@ -338,7 +378,7 @@ function balanceSheetCard(b) {
   grp("Assets", b.assets, true);
   grp("Current assets", currentAssets);
   line("Cash in bank", b.cash);
-  line("Product inventory", inventory, b.closetUnits ? `machines + ${b.closetUnits} closet units` : "in the machines");
+  line("Product inventory", inventory, b.closetUnits ? `${b.closetUnits} units, machines + closet (Sortly)` : "from Sortly");
   grp("Fixed assets", b.equipment);
   line("Machines (equipment)", b.equipment);
   t.appendChild(el(`<div class="qb-h b tot"><span>Total assets</span><span>${money2(b.assets)}</span></div>`));
@@ -350,6 +390,7 @@ function balanceSheetCard(b) {
   t.appendChild(el(`<div class="qb-h b tot"><span>Liabilities + equity</span><span>${money2((b.liabilities || 0) + (b.equity || 0))}</span></div>`));
   c.appendChild(t);
   c.appendChild(el(`<div class="note good" style="margin-top:12px"><b>Net worth: ${money(b.equity)}</b> — everything you own, minus the loan.</div>`));
+  c.appendChild(el(`<div class="note" style="margin-top:8px;font-size:11.5px">A balance sheet is a snapshot of <i>right now</i> — that's why it has no date buttons like the P&L. Once the bank feed is in, this can be shown as of any past date too.</div>`));
   return c;
 }
 
@@ -360,7 +401,7 @@ function cashBridgeCard(d, pl) {
   // Actual cash that went to principal = what's been knocked off the balance
   // (the schedule's principal column understates it because of your overpayments).
   const principalPaid = Math.max(0, 13000 - (d.loan.balance || 13000));
-  const inventory = (b.machineInventory || 0) + (b.closetInventory || 0);
+  const inventory = b.inventory != null ? b.inventory : (b.closetInventory || 0);
   const cash = b.cash || 0;
 
   const c = el(`<div class="card"><div class="ct">Why profit isn't in the bank</div><div class="cs">Profit ${money(lifeNet)} · cash ${money(cash)} — they're never the same number</div></div>`);

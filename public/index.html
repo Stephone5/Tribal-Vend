@@ -150,6 +150,12 @@
   .qb-l .pos, .qb-h .pos{color:var(--good); font-weight:800}
   .qb-sub{display:block; font-size:11px; color:var(--muted); font-weight:400; margin-top:1px}
 
+  /* ---------- period selector (P&L) ---------- */
+  .period-bar{display:flex; gap:7px; overflow-x:auto; padding:2px 0 4px; margin-bottom:4px; -webkit-overflow-scrolling:touch}
+  .period-bar::-webkit-scrollbar{display:none}
+  .period-btn{flex:0 0 auto; background:var(--surface); border:1.5px solid var(--line); color:var(--ink-2); border-radius:99px; padding:8px 15px; font-size:13px; font-weight:700; cursor:pointer; white-space:nowrap}
+  .period-btn.on{background:var(--char); border-color:var(--char); color:#fff}
+
   /* ---------- notes / alerts ---------- */
   .note{
     background:var(--surface); border-radius:14px; padding:14px 16px;
