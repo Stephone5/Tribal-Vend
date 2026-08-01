@@ -362,21 +362,19 @@ function cashBridgeCard(d, pl) {
   const principalPaid = Math.max(0, 13000 - (d.loan.balance || 13000));
   const inventory = (b.machineInventory || 0) + (b.closetInventory || 0);
   const cash = b.cash || 0;
-  // The line that makes the column add up: owner money in/out, the machine down
-  // payment, startup, and deposits in transit — all the flows the app can't see
-  // without the bank. Solve: profit − principal − inventory + rest = cash.
-  const rest = cash - lifeNet + principalPaid + inventory;
-  const restIn = rest >= 0;
 
-  const c = el(`<div class="card"><div class="ct">Why profit isn't in the bank</div><div class="cs">You've earned ${money(lifeNet)} but hold ${money(cash)} cash — here's the gap</div></div>`);
+  const c = el(`<div class="card"><div class="ct">Why profit isn't in the bank</div><div class="cs">Profit ${money(lifeNet)} · cash ${money(cash)} — they're never the same number</div></div>`);
+
+  // ONLY the cash movements we can actually measure. No plug, no forced total.
+  c.appendChild(el(`<div style="font-size:12.5px;color:var(--muted);font-weight:700;margin:6px 2px 2px;text-transform:uppercase;letter-spacing:.06em">What we can measure</div>`));
   const t = el(`<div class="qb"></div>`);
-  t.appendChild(el(`<div class="qb-h b"><span>Lifetime profit (accrual)</span><span>${money2(lifeNet)}</span></div>`));
-  t.appendChild(el(`<div class="qb-l"><span>Paid down the loan<span class="qb-sub">principal — builds your equity, not an expense</span></span><span class="neg">−${money2(principalPaid)}</span></div>`));
-  t.appendChild(el(`<div class="qb-l"><span>Tied up in product<span class="qb-sub">stock on the shelves and in the closet</span></span><span class="neg">−${money2(inventory)}</span></div>`));
-  t.appendChild(el(`<div class="qb-l"><span>${restIn ? "Money you put in, net" : "Owner draws"}, startup &amp; timing<span class="qb-sub">needs the bank feed to pin down exactly</span></span><span class="${restIn ? "pos" : "neg"}">${restIn ? "+" : "−"}${money2(Math.abs(rest))}</span></div>`));
-  t.appendChild(el(`<div class="qb-h b tot"><span>Cash in the bank</span><span>${money2(cash)}</span></div>`));
+  t.appendChild(el(`<div class="qb-l"><span>Cash sent to loan principal<span class="qb-sub">real money out; builds equity, never hit the P&amp;L as an expense</span></span><span class="neg">−${money2(principalPaid)}</span></div>`));
+  t.appendChild(el(`<div class="qb-l"><span>Cash tied up in stock on hand<span class="qb-sub">product sitting in machines + closet right now</span></span><span class="neg">−${money2(inventory)}</span></div>`));
   c.appendChild(t);
-  c.appendChild(el(`<div class="note" style="margin-top:12px"><b>The big one is the loan.</b> Nearly all your profit went straight into paying down principal — that's real money out the door, but it's not an "expense," so your profit never dropped for it. It became equity in the machines instead of cash. To make the last line exact (money you paid yourself, the machine down payment, deposits still in transit), the app needs your bank transactions — the Oklahoma bank feed does that.</div>`));
+
+  c.appendChild(el(`<div class="note" style="margin-top:12px"><b>That principal number is the headline.</b> You've put ${money(principalPaid)} of cash into paying down the loan — more than your whole profit — so money has clearly also come <i>in</i> (your QuickBooks shows the owner contributions). Profit funded loan equity, not your checking account.</div>`));
+
+  c.appendChild(el(`<div class="note bad" style="margin-top:10px"><b>What we can't measure yet — and won't fake:</b><br>• <b>Inventory loss</b> — product you bought but never sold (theft, spoilage, jams, miscounts). Real cash gone, invisible until we compare Sam's receipts to AirVend sales.<br>• Money you put in vs. paid yourself, and the machine down payment — needs the bank.<br>• Deposits still clearing — needs the bank.<br>A true cash-flow statement needs those two feeds. I'm not going to invent a number to make it tie out.</div>`));
   return c;
 }
 
