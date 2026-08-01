@@ -124,6 +124,12 @@ function askContext(live, closet) {
     lines.push(`\nMACHINE SALES BY MONTH (from real transactions, first sale ${S.firstSale ? S.firstSale.slice(0, 10) : "n/a"}) — use this for seasonality:`);
     S.months.forEach(m => lines.push(`${m.m}: $${m.revenue.toFixed(2)} revenue, $${m.profit.toFixed(2)} profit, ${m.units} units`));
   }
+  if (S?.monthlyByCategory?.length) {
+    const cats = ["energy", "soda", "sports/water", "cold food", "chips", "candy", "pastry", "other"];
+    lines.push(`\nUNITS SOLD BY CATEGORY BY MONTH (real transactions) — this IS the seasonal decomposition; use it to say which categories carry which months:`);
+    lines.push(`month | ${cats.join(" | ")}`);
+    S.monthlyByCategory.forEach(r => lines.push(`${r.m} | ${cats.map(c => r[c] || 0).join(" | ")}`));
+  }
   if (live?.fixedCosts) lines.push(`\nFIXED MONTHLY COSTS: ${live.fixedCosts.map(c => `${c.name} $${c.amount.toFixed(2)}`).join("; ")}`);
   if (live?.loan) lines.push(`\nLOAN: ${JSON.stringify(live.loan)}`);
   return lines.join("\n");

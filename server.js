@@ -8,7 +8,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { runBrain, askBrain } from "./brain.js";
 import { writeOnHand, getMachineLive } from "./airvend.js";
-import { costFor, costInfo, setCostOverrides, categoryFor, SOLD_BY_SLOT, SALES_WINDOW, MONTHLY, FIXED_COSTS, buildPL } from "./catalog.js";
+import { costFor, costInfo, setCostOverrides, categoryFor, seasonCategoryFor, SOLD_BY_SLOT, SALES_WINDOW, MONTHLY, FIXED_COSTS, buildPL } from "./catalog.js";
 import { CLOSET_SEED } from "./closet-seed.js";
 import { auditData } from "./audit.js";
 import { LOAN, loanStatus } from "./loan.js";
@@ -68,6 +68,20 @@ const HISTORY_START = new Date("2024-09-01");
 const RECENT_DAYS = 60;
 let historyCache = { at: 0, txns: null };
 
+// Units sold per category per month — the seasonality decomposition the CEO
+// chat needs to answer "does energy carry winter, do chips carry summer".
+const SEASON_CATS = ["energy", "soda", "sports/water", "cold food", "chips", "candy", "pastry", "other"];
+function monthlyByCategory(txns) {
+  const byMonth = {};
+  for (const t of txns) {
+    const k = `${t.when.getFullYear()}-${String(t.when.getMonth() + 1).padStart(2, "0")}`;
+    (byMonth[k] ||= Object.fromEntries(SEASON_CATS.map(c => [c, 0])));
+    byMonth[k][seasonCategoryFor(t.item)] += 1;
+  }
+  return Object.entries(byMonth).sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([m, cats]) => ({ m, ...cats }));
+}
+
 async function getSales(force = false) {
   if (!force && salesCache.sum && Date.now() - salesCache.at < SALES_TTL) return salesCache.sum;
 
@@ -94,6 +108,7 @@ async function getSales(force = false) {
 
   const sum = summarize(all, costFor);
   sum.salesTax = salesTaxReport(all, 2026);
+  sum.monthlyByCategory = monthlyByCategory(all);
   salesCache = { at: Date.now(), sum };
   return sum;
 }
@@ -180,7 +195,7 @@ async function buildLive(force = false) {
       thisMonth: sales.thisMonth, lastMonth: sales.lastMonth,
       weekStart: sales.weekStart, weeks: sales.weeks, days: sales.days,
       byDow: sales.byDow, byHour: sales.byHour, byItem: sales.byItem.slice(0, 40),
-      months: sales.months, firstSale: sales.firstSale,
+      months: sales.months, monthlyByCategory: sales.monthlyByCategory, firstSale: sales.firstSale,
       txnCount: sales.txnCount, spanDays: Math.round(spanDays),
       freshAt: salesCache.at,
     } : null,

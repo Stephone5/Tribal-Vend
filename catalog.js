@@ -67,6 +67,21 @@ export function costInfo(productName) {
 }
 export function costFor(productName) { return costInfo(productName).cost; }
 
+// Seasonality buckets Stephen wants to watch: energy, soda, sports/water, cold
+// food, chips, candy, pastry (jerky/misc fall to "other"). Energy is checked
+// first so "Celsius Sparkling Cola" lands in energy, not soda.
+export function seasonCategoryFor(productName) {
+  const n = (productName || "").toLowerCase();
+  if (/c4|celsius|monster|red ?bull|bang|reign|rockstar|ghost energy|alani|prime energy|black rifle|coffee/.test(n)) return "energy";
+  if (/coke|coca|pepsi|dr ?pepper|drpepper|mountain dew|mtn dew|sprite|sierra mist|fanta|crush|sunkist|mello yello|7 ?up|root beer|ginger ale|\bcola\b/.test(n)) return "soda";
+  if (/gatorade|powerade|bodyarmor|body armor|water|deer park|aquafina|dasani|sparkling ice|vitamin ?water|propel|snapple|arizona|\btea\b|lemonade|juice/.test(n)) return "sports/water";
+  if (/jimmy dean|hot pocket|uncrustable|sandwich|burrito|pizza/.test(n)) return "cold food";
+  if (/miss vickie|sun ?chips|snyder|takis|ruffles|cheez-?it|chips|pretzel|doritos|lays|cheetos|popcorn|combos/.test(n)) return "chips";
+  if (/m&m|mm peanut|reese|kit ?kat|butterfinger|starburst|payday|trident|welch|skittles|\bgum\b|sour|airhead|twix|snickers|hershey/.test(n)) return "candy";
+  if (/muffin|honey bun|pop ?tart|oatmeal cream|nutty buddy|clif|cinnamon|donut|danish|brownie|cookie|\bcake\b|honeybun|little debbie/.test(n)) return "pastry";
+  return "other";
+}
+
 export function categoryFor(productName) {
   const n = (productName || "").toLowerCase();
   if (/jimmy dean|hot pocket|uncrustable/.test(n)) return "Cold Food";

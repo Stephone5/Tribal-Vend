@@ -50,6 +50,22 @@ function lineChart(series, { color = "var(--s1)", avg = null } = {}) {
   [0, Math.floor(series.length / 2), series.length - 1].forEach(i => tx(s, xf(i), H - 5, series[i].m));
   return s;
 }
+function multiLineChart(rows, series) {
+  // rows: [{m, <key>:units, ...}] ; series: [{key,label,color}]
+  const W = 680, H = 210, L = 6, R = 6, T = 14, B = 22;
+  const s = svg(W, H);
+  const hi = niceMax(Math.max(...rows.flatMap(r => series.map(se => r[se.key] || 0)), 1) * 1.08);
+  const iw = W - L - R, ih = H - T - B;
+  const xf = i => L + (rows.length === 1 ? iw / 2 : (i / (rows.length - 1)) * iw), yf = v => T + ih - (v / hi) * ih;
+  for (let g = 0; g <= 2; g++) { const yv = hi * g / 2, y = yf(yv); ln(s, L, y, W - R, y, "var(--line)"); tx(s, L, y - 4, String(Math.round(yv)), { anchor: "start" }); }
+  series.forEach(se => {
+    let d = "";
+    rows.forEach((r, i) => { d += `${i ? " L" : "M"} ${xf(i)} ${yf(r[se.key] || 0)}`; });
+    pathd(s, d, se.color, 2);
+  });
+  [0, Math.floor(rows.length / 2), rows.length - 1].forEach(i => tx(s, xf(i), H - 5, rows[i].m.slice(2)));
+  return s;
+}
 function groupChart(rows, aKey, bKey, aColor, bColor) {
   const W = 680, H = 190, L = 6, R = 6, T = 14, B = 22;
   const s = svg(W, H);
@@ -160,6 +176,9 @@ function paint(root, d, stale) {
 
   // Balance sheet — QuickBooks-style grouping.
   if (d.balanceSheet) root.appendChild(balanceSheetCard(d.balanceSheet));
+
+  // Why profit ≠ cash — the question every owner asks.
+  if (pl.length && d.balanceSheet && d.loan) root.appendChild(cashBridgeCard(d, pl));
 
   // Loan
   if (d.loan) {
@@ -303,7 +322,7 @@ function plCard(pl) {
   wrap.appendChild(tbl); body.appendChild(wrap);
   tog.onclick = () => { body.hidden = !body.hidden; tog.querySelector("span").textContent = body.hidden ? "▾" : "▴"; };
   c.appendChild(tog); c.appendChild(body);
-  c.appendChild(el(`<div class="note" style="margin-top:12px">Cash-basis, from your live sales. Product cost is deducted (your tax pro's Schedule C does the same) — that's why net here runs lower than QuickBooks, which parks product cost in inventory instead. Operating costs are estimated at today's monthly rates.</div>`));
+  c.appendChild(el(`<div class="note" style="margin-top:12px"><b>Accrual basis</b> — like your QuickBooks. Sales are booked when they happen (not when the cash lands), and product cost is matched to the units actually sold. Operating costs are estimated at today's monthly rates until the bank feed is wired.</div>`));
   return c;
 }
 
@@ -331,6 +350,33 @@ function balanceSheetCard(b) {
   t.appendChild(el(`<div class="qb-h b tot"><span>Liabilities + equity</span><span>${money2((b.liabilities || 0) + (b.equity || 0))}</span></div>`));
   c.appendChild(t);
   c.appendChild(el(`<div class="note good" style="margin-top:12px"><b>Net worth: ${money(b.equity)}</b> — everything you own, minus the loan.</div>`));
+  return c;
+}
+
+// ---------- profit vs cash bridge ----------
+function cashBridgeCard(d, pl) {
+  const b = d.balanceSheet;
+  const lifeNet = pl.reduce((a, p) => a + p.net, 0);
+  // Actual cash that went to principal = what's been knocked off the balance
+  // (the schedule's principal column understates it because of your overpayments).
+  const principalPaid = Math.max(0, 13000 - (d.loan.balance || 13000));
+  const inventory = (b.machineInventory || 0) + (b.closetInventory || 0);
+  const cash = b.cash || 0;
+  // The line that makes the column add up: owner money in/out, the machine down
+  // payment, startup, and deposits in transit — all the flows the app can't see
+  // without the bank. Solve: profit − principal − inventory + rest = cash.
+  const rest = cash - lifeNet + principalPaid + inventory;
+  const restIn = rest >= 0;
+
+  const c = el(`<div class="card"><div class="ct">Why profit isn't in the bank</div><div class="cs">You've earned ${money(lifeNet)} but hold ${money(cash)} cash — here's the gap</div></div>`);
+  const t = el(`<div class="qb"></div>`);
+  t.appendChild(el(`<div class="qb-h b"><span>Lifetime profit (accrual)</span><span>${money2(lifeNet)}</span></div>`));
+  t.appendChild(el(`<div class="qb-l"><span>Paid down the loan<span class="qb-sub">principal — builds your equity, not an expense</span></span><span class="neg">−${money2(principalPaid)}</span></div>`));
+  t.appendChild(el(`<div class="qb-l"><span>Tied up in product<span class="qb-sub">stock on the shelves and in the closet</span></span><span class="neg">−${money2(inventory)}</span></div>`));
+  t.appendChild(el(`<div class="qb-l"><span>${restIn ? "Money you put in, net" : "Owner draws"}, startup &amp; timing<span class="qb-sub">needs the bank feed to pin down exactly</span></span><span class="${restIn ? "pos" : "neg"}">${restIn ? "+" : "−"}${money2(Math.abs(rest))}</span></div>`));
+  t.appendChild(el(`<div class="qb-h b tot"><span>Cash in the bank</span><span>${money2(cash)}</span></div>`));
+  c.appendChild(t);
+  c.appendChild(el(`<div class="note" style="margin-top:12px"><b>The big one is the loan.</b> Nearly all your profit went straight into paying down principal — that's real money out the door, but it's not an "expense," so your profit never dropped for it. It became equity in the machines instead of cash. To make the last line exact (money you paid yourself, the machine down payment, deposits still in transit), the app needs your bank transactions — the Oklahoma bank feed does that.</div>`));
   return c;
 }
 
@@ -457,6 +503,24 @@ function moreSection(d, allSlots, known, S, pl) {
         const c3 = el(`<div class="card"><div class="ct">Seasonal curve</div><div class="cs">Machine revenue by month, ${S.months[0].m} → now</div></div>`);
         c3.appendChild(lineChart(S.months.map(m => ({ m: m.m.slice(2), v: Math.round(m.revenue) }))));
         body.appendChild(c3);
+      }
+
+      if (S.monthlyByCategory && S.monthlyByCategory.length > 2) {
+        const series = [
+          { key: "energy", label: "Energy", color: "var(--s1)" },
+          { key: "soda", label: "Soda", color: "var(--s2)" },
+          { key: "sports/water", label: "Sports/water", color: "var(--s3)" },
+          { key: "chips", label: "Chips", color: "var(--s4)" },
+          { key: "candy", label: "Candy", color: "#c9770e" },
+          { key: "pastry", label: "Pastry", color: "#7b5ea7" },
+          { key: "cold food", label: "Cold food", color: "#3f8f6b" },
+        ];
+        const c3b = el(`<div class="card"><div class="ct">Category seasonality</div><div class="cs">Units/month per category — does energy carry winter, chips carry summer?</div></div>`);
+        c3b.appendChild(multiLineChart(S.monthlyByCategory, series));
+        const leg = el(`<div class="legend"></div>`);
+        series.forEach(se => leg.appendChild(el(`<span><i style="background:${se.color}"></i>${se.label}</span>`)));
+        c3b.appendChild(leg);
+        body.appendChild(c3b);
       }
     }
     if (pl.length) {
