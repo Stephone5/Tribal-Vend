@@ -86,6 +86,24 @@ function injectStyles(){
     .cl-hist .h{font-size:12px;color:var(--muted);display:flex;justify-content:space-between;padding:5px 2px;font-variant-numeric:tabular-nums}
     .cl-tools{display:flex;gap:8px;margin-top:12px}
     .cl-tools button{flex:1;padding:11px;border-radius:12px;border:1px solid var(--line);background:var(--surface-2);color:var(--ink-2);font-weight:700;font-size:12px;cursor:pointer}
+    /* collapsible folder dropdowns (Sortly-style) */
+    .cl-fold{margin-top:12px;padding:6px 14px 6px}
+    .cl-fhead{display:flex;align-items:center;gap:12px;padding:10px 2px;cursor:pointer}
+    .cl-fgrid{width:46px;height:46px;flex:none;display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;gap:2px;border-radius:10px;overflow:hidden;background:var(--surface-2)}
+    .cl-fgrid img{width:100%;height:100%;object-fit:cover}
+    .cl-fgrid .ph{display:flex;align-items:center;justify-content:center;background:var(--surface-2);color:var(--muted);font-size:11px;font-weight:800}
+    .cl-finfo{flex:1;min-width:0}
+    .cl-finfo .fn{font-weight:800;font-size:16px}
+    .cl-finfo .fs{font-size:12.5px;color:var(--muted);font-variant-numeric:tabular-nums;margin-top:2px}
+    .cl-flow{color:var(--bad);font-weight:800}
+    .cl-chev{color:var(--muted);font-size:20px;transition:transform .15s;flex:none;line-height:1}
+    .cl-chev.open{transform:rotate(90deg)}
+    .cl-items{border-top:1px solid var(--line);margin-top:2px}
+    .cl-items[hidden]{display:none}
+    /* item name line — chip stays put, name truncates */
+    .cl-nmline{display:flex;align-items:center;gap:6px}
+    .cl-nmtext{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:14px;font-weight:600}
+    .cl-low{flex:none}
   </style>`));
 }
 
@@ -109,7 +127,7 @@ let ROOT=null;
 export async function renderCloset(rootEl){
   injectStyles();
   ROOT = rootEl;
-  ROOT.innerHTML = `<h2>Closet</h2><div class="empty">Loading…</div>`;
+  ROOT.innerHTML = `<h2>Inventory</h2><div class="empty">Loading…</div>`;
   await pull();
   paint();
 }
@@ -126,7 +144,7 @@ function paint(){
   const totUnits = d.items.reduce((a,i)=>a+(Number(i.qty)||0),0);
   const totValue = d.items.reduce((a,i)=>a+(Number(i.qty)||0)*(Number(i.price)||0),0);
 
-  root.appendChild(elc(`<h2>Closet</h2>`));
+  root.appendChild(elc(`<h2>Inventory</h2>`));
   const sum = elc(`<div class="cl-sum">
     <div class="tile"><div class="k">Total units</div><div class="v">${totUnits.toLocaleString()}</div><div class="d" style="color:var(--muted)">across all folders</div></div>
     <div class="tile"><div class="k">Total value</div><div class="v">${usd(totValue)}</div><div class="d" style="color:var(--muted)">at your unit prices</div></div>
@@ -137,18 +155,27 @@ function paint(){
   add.onclick = ()=>openEditor(null);
   root.appendChild(add);
 
-  if (!d.items.length){
-    root.appendChild(elc(`<div class="empty">Nothing here yet. Add your first item — snack, candy, cold food, or drink.</div>`));
-  }
-
+  // One collapsible dropdown per folder — tap to open, like Sortly.
   for (const folder of FOLDERS){
     const items = d.items.filter(i=>i.folder===folder).sort((a,b)=>a.name.localeCompare(b.name));
-    if (!items.length) continue;
     const fu = items.reduce((a,i)=>a+(Number(i.qty)||0),0);
     const fv = items.reduce((a,i)=>a+(Number(i.qty)||0)*(Number(i.price)||0),0);
-    const sec = elc(`<div class="cl-fold card"><div class="cl-fh"><span class="n">${folder}</span><span class="s">${fu} units · ${usd(fv)}</span></div></div>`);
-    for (const it of items) sec.appendChild(itemRow(it));
-    root.appendChild(sec);
+    const lowCount = items.filter(i=>i.min!=null&&i.min!==""&&Number(i.qty)<=Number(i.min)).length;
+
+    const card = elc(`<div class="cl-fold card"></div>`);
+    const thumbs = items.slice(0,4).map(i=> i.img?`<img src="${i.img}" alt="">`:`<div class="ph">${(i.name||"?").slice(0,1).toUpperCase()}</div>`).join("");
+    const filler = Array.from({length:Math.max(0,4-Math.min(4,items.length))}).map(()=>`<div class="ph"></div>`).join("");
+    const head = elc(`<div class="cl-fhead">
+      <div class="cl-fgrid">${thumbs}${filler}</div>
+      <div class="cl-finfo"><div class="fn">${folder}</div><div class="fs">${items.length} item${items.length===1?"":"s"} · ${fu} units · ${usd(fv)}${lowCount?` · <span class="cl-flow">${lowCount} low</span>`:""}</div></div>
+      <span class="cl-chev">›</span>
+    </div>`);
+    const list = elc(`<div class="cl-items" hidden></div>`);
+    items.forEach(it=>list.appendChild(itemRow(it)));
+    if(!items.length) list.appendChild(elc(`<div class="empty" style="padding:16px 4px">No items in ${folder} yet.</div>`));
+    head.onclick = ()=>{ const open=list.hidden; list.hidden=!open; head.querySelector(".cl-chev").classList.toggle("open",open); };
+    card.appendChild(head); card.appendChild(list);
+    root.appendChild(card);
   }
 
   const tools = elc(`<div class="cl-tools"><button id="cl-exp">Export backup</button><button id="cl-imp">Import backup</button></div>`);
@@ -163,7 +190,7 @@ function itemRow(it){
   const row = elc(`<div class="cl-item">
     ${it.img ? `<img class="cl-thumb" src="${it.img}" alt="">` : `<div class="cl-thumb">${(it.name||"?").slice(0,1).toUpperCase()}</div>`}
     <div class="cl-mid">
-      <div class="nm">${escapeHtml(it.name)}${low?`<span class="cl-low">LOW</span>`:""}</div>
+      <div class="cl-nmline"><span class="cl-nmtext">${escapeHtml(it.name)}</span>${low?`<span class="cl-low">LOW</span>`:""}</div>
       <div class="mt">${usd(it.price)} ea · ${usd(value)} total</div>
     </div>
     <div class="cl-step">
@@ -182,8 +209,8 @@ function itemRow(it){
     row.querySelector(".q").textContent = item.qty;
     row.querySelector(".mt").textContent = `${usd(item.price)} ea · ${usd(item.qty*(Number(item.price)||0))} total`;
     const lowNow = item.min!=null && item.min!=="" && Number(item.qty)<=Number(item.min);
-    const nm = row.querySelector(".nm");
-    nm.innerHTML = `${escapeHtml(item.name)}${lowNow?`<span class="cl-low">LOW</span>`:""}`;
+    const nm = row.querySelector(".cl-nmline");
+    nm.innerHTML = `<span class="cl-nmtext">${escapeHtml(item.name)}</span>${lowNow?`<span class="cl-low">LOW</span>`:""}`;
     updateRollups();
   };
   row.querySelector('[data-a="minus"]').onclick = ()=>bump(-1);
@@ -200,13 +227,16 @@ function updateRollups(){
   const tiles = ROOT.querySelectorAll(".cl-sum .v");
   if (tiles[0]) tiles[0].textContent = totUnits.toLocaleString();
   if (tiles[1]) tiles[1].textContent = usd(totValue);
-  // folder subtotals
-  ROOT.querySelectorAll(".cl-fold").forEach(sec=>{
-    const folder = sec.querySelector(".cl-fh .n").textContent;
+  // folder subtotals + low counts
+  ROOT.querySelectorAll(".cl-fold").forEach(card=>{
+    const fn = card.querySelector(".cl-finfo .fn"); if(!fn) return;
+    const folder = fn.textContent;
     const items = d.items.filter(i=>i.folder===folder);
     const fu = items.reduce((a,i)=>a+(Number(i.qty)||0),0);
     const fv = items.reduce((a,i)=>a+(Number(i.qty)||0)*(Number(i.price)||0),0);
-    sec.querySelector(".cl-fh .s").textContent = `${fu} units · ${usd(fv)}`;
+    const lowCount = items.filter(i=>i.min!=null&&i.min!==""&&Number(i.qty)<=Number(i.min)).length;
+    const fs = card.querySelector(".cl-finfo .fs");
+    if(fs) fs.innerHTML = `${items.length} item${items.length===1?"":"s"} · ${fu} units · ${usd(fv)}${lowCount?` · <span class="cl-flow">${lowCount} low</span>`:""}`;
   });
 }
 
@@ -245,7 +275,7 @@ function openEditor(existing){
     const t=await toThumb(f); if(t){ it.img=t; const cur=imgPick.querySelector("img,.cl-thumb"); const ni=elc(`<img src="${t}" alt="">`); cur.replaceWith(ni); }
   };
 
-  const saveBtn = elc(`<button class="btn" style="margin-top:14px">${existing?"Save":"Add to closet"}</button>`);
+  const saveBtn = elc(`<button class="btn" style="margin-top:14px">${existing?"Save":"Add to inventory"}</button>`);
   saveBtn.onclick = ()=>{
     it.name = nameF.querySelector("input").value.trim();
     if(!it.name){ nameF.querySelector("input").focus(); return; }
