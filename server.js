@@ -170,8 +170,10 @@ async function buildLive(force = false) {
     machines.push({ ...m, slots: rows });
   }
 
-  // Balance sheet — what the business owns vs owes, right now.
-  const closet = await getDoc("closet:default").catch(() => null);
+  // Balance sheet — what the business owns vs owes, right now. Uses loadCloset()
+  // (seeds if needed) so your closet inventory is ALWAYS counted, even if the
+  // Inventory tab hasn't been opened yet this session.
+  const closet = await loadCloset().catch(() => null);
   const cItems = (closet && closet.items) || [];
   const closetInventory = cItems.reduce((a, i) => a + (Number(i.qty) || 0) * (Number(i.price) || 0), 0);
   const closetUnits = cItems.reduce((a, i) => a + (Number(i.qty) || 0), 0);
@@ -307,19 +309,24 @@ const SEEDVER_KEY = "closet:seedver";
 // that, your own edits persist untouched.
 const SEED_VERSION = "2026-08-01-full-41";
 
+// Single source of truth for reading the closet — seeds on first run or once
+// when SEED_VERSION changes. The balance sheet uses this too, so machine +
+// closet inventory always ties out no matter which endpoint is hit first.
+async function loadCloset() {
+  let doc = await getDoc(CLOSET_KEY).catch(() => null);
+  const ver = await getDoc(SEEDVER_KEY).catch(() => null);
+  const empty = !doc || !Array.isArray(doc.items) || doc.items.length === 0;
+  if (empty || ver !== SEED_VERSION) {
+    doc = JSON.parse(JSON.stringify(CLOSET_SEED));
+    await setDoc(CLOSET_KEY, doc);
+    await setDoc(SEEDVER_KEY, SEED_VERSION);
+  }
+  return doc;
+}
+
 app.get("/api/closet", async (_req, res) => {
-  try {
-    let doc = await getDoc(CLOSET_KEY);
-    const ver = await getDoc(SEEDVER_KEY).catch(() => null);
-    const empty = !doc || !Array.isArray(doc.items) || doc.items.length === 0;
-    // Seed on first run, or force-reload once when SEED_VERSION changes.
-    if (empty || ver !== SEED_VERSION) {
-      doc = JSON.parse(JSON.stringify(CLOSET_SEED));
-      await setDoc(CLOSET_KEY, doc);
-      await setDoc(SEEDVER_KEY, SEED_VERSION);
-    }
-    res.json(doc);
-  } catch (err) { res.status(502).json({ error: "store_failed", message: err?.message || "Storage read failed." }); }
+  try { res.json(await loadCloset()); }
+  catch (err) { res.status(502).json({ error: "store_failed", message: err?.message || "Storage read failed." }); }
 });
 app.put("/api/closet", async (req, res) => {
   try { await setDoc(CLOSET_KEY, req.body || { items: [], hist: [] }); res.json({ ok: true }); }
