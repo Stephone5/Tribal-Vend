@@ -183,7 +183,7 @@ async function buildLive(force = false) {
       freshAt: salesCache.at,
     } : null,
     window: SALES_WINDOW, monthly: MONTHLY, fixedCosts: FIXED_COSTS,
-    pl: buildPL(), loan, balanceSheet, at: Date.now(),
+    pl: buildPL(sales?.months), loan, balanceSheet, at: Date.now(),
   };
   try { payload.audit = auditData(payload, closet); }
   catch (e) { payload.audit = { issues: [], counts: { critical: 0, warning: 0, info: 0 } }; }

@@ -1,4 +1,4 @@
-import { MACHINES } from "./data.js";
+import { MACHINES, packageOf } from "./data.js";
 import { renderCloset } from "./closet.js";
 import { renderCompany } from "./company.js";
 import { renderChat } from "./chat.js";
@@ -88,6 +88,12 @@ async function buildBuyList(sel, list, out, gen){
   if(!shorts.length){ out.appendChild(el(`<div class="empty">Nothing entered — machine's full to par. Nothing to buy.</div>`)); return; }
   try{ localStorage.setItem("tv_lastrun", JSON.stringify({at:Date.now(),machine,shorts})); }catch(e){}
 
+  // Deterministic package roll-up — how it's actually ordered. Variant slots
+  // (all Miss Vickie's, all Sun Chips, all Snyder's, all Gatorade) sum into one
+  // line; Arizona flavors and everything else stay on their own. Always shown,
+  // brain or not.
+  renderPackages(out, shorts);
+
   gen.disabled=true; gen.textContent="Thinking…";
   let res, body;
   try{
@@ -108,14 +114,31 @@ async function buildBuyList(sel, list, out, gen){
   renderBrain(out, body, { machineId: sel.value, machine, gaps: shorts });
 }
 
+// Package roll-up: sum the missing units by how the product is bought.
+function renderPackages(out, shorts){
+  const groups={};
+  shorts.forEach(x=>{
+    const g=packageOf(x.item);
+    if(!groups[g.key]) groups[g.key]={label:g.label,units:0,slots:[]};
+    groups[g.key].units+=x.missing;
+    groups[g.key].slots.push(x.slot);
+  });
+  const list=Object.values(groups).sort((a,b)=>b.units-a.units);
+  const totalUnits=list.reduce((a,g)=>a+g.units,0);
+  out.appendChild(el(`<h2 style="margin-top:24px">To buy <span class="pill warn">${list.length}</span></h2>`));
+  const c=el(`<div class="card buy"><div class="ct">By package</div><div class="cs">${totalUnits} units short · summed how you order them</div></div>`);
+  const rows=el(`<div class="rows"></div>`);
+  list.forEach(g=>{
+    const many=g.slots.length>1;
+    const sub=many?`slots ${g.slots.join(", ")} · ${g.slots.length} flavors`:`slot ${g.slots[0]}`;
+    rows.appendChild(el(`<div class="row"><div class="nm">${g.label}<div class="mt">${sub}</div></div><div class="val">${g.units}</div></div>`));
+  });
+  c.appendChild(rows); out.appendChild(c);
+}
+
 // Raw fallback: just the counts entered, shown clearly, with why the brain didn't run.
 function renderLocalList(out, shorts, why){
-  out.appendChild(el(`<h2 style="margin-top:24px">Your counts <span class="pill warn">${shorts.length}</span></h2>`));
-  const c=el(`<div class="card buy"><div class="ct">Reported par gaps</div><div class="cs">Saved on your phone</div></div>`);
-  const rows=el(`<div class="rows"></div>`);
-  shorts.forEach(x=>rows.appendChild(el(`<div class="row"><div class="nm">${x.item}<div class="mt">slot ${x.slot}</div></div><div class="val">${x.par}</div></div>`)));
-  c.appendChild(rows); out.appendChild(c);
-  out.appendChild(el(`<div class="note">${why} Once it is, this becomes a real buy list in cases with reconciliation and change orders.</div>`));
+  out.appendChild(el(`<div class="note">${why} The package roll-up above is your buy list. Once the brain's connected, this also gets cases, reconciliation, and change orders.</div>`));
 }
 
 // Full brain result: summary, reconciliation, buy list in cases, change orders.

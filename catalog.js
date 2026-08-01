@@ -121,18 +121,38 @@ export const FIXED_COSTS = [
   { name: "Google Workspace", amount: 8.90 },
 ];
 
-// Estimated product cost ratio for P&L (revenue → COGS). Derived from the
-// per-slot margin math across both machines.
+// Fallback product-cost ratio (revenue → COGS), used only for months that
+// predate the live transaction feed. Real months use per-item costs instead.
 export const COGS_RATIO = 0.52;
 
-export function buildPL() {
-  // Keep every month with any money moving — dropping the early ones hid the
-  // start of the business and made seasonality impossible to see.
+const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+// Build the P&L. Revenue comes from the LIVE TRANSACTION FEED (salesMonths),
+// which records every sale on the day it happened — the true top line. Bank
+// deposits lag by collection/deposit timing (cash gets banked weeks later, in
+// lumps), so they understate the month a sale actually occurred. We keep the
+// bank figures only for the reconciliation columns (deposits, debits, balance).
+// Months before the feed began fall back to bank deposits × COGS_RATIO.
+export function buildPL(salesMonths) {
+  const txnBy = {};
+  (salesMonths || []).forEach(sm => {
+    const label = `${MON[+sm.m.split("-")[1] - 1]} ${sm.m.slice(2, 4)}`;
+    txnBy[label] = sm;
+  });
+  const fixed = FIXED_COSTS.reduce((a, c) => a + c.amount, 0);
+  // Keep every month with any money moving — including the startup month.
   return MONTHLY.filter(m => (m.card + m.cash) > 0 || m.debits > 0).map(m => {
-    const revenue = m.card + m.cash;
-    const cogs = revenue * COGS_RATIO;
-    const gross = revenue - cogs;
-    const fixed = FIXED_COSTS.reduce((a, c) => a + c.amount, 0);
-    return { m: m.m, revenue, cogs, gross, fixed, net: gross - fixed, balance: m.balance, debits: m.debits };
+    const tx = txnBy[m.m];
+    const deposits = m.card + m.cash;
+    let revenue, cogs, gross, source;
+    if (tx && tx.revenue > 0) {
+      revenue = tx.revenue; gross = tx.profit; cogs = revenue - gross; source = "sales";
+    } else {
+      revenue = deposits; cogs = revenue * COGS_RATIO; gross = revenue - cogs; source = "bank";
+    }
+    return {
+      m: m.m, revenue, cogs, gross, fixed, net: gross - fixed,
+      balance: m.balance, debits: m.debits, deposits, source,
+    };
   });
 }
