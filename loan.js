@@ -688,6 +688,16 @@ export const LOAN = {
 ]
 };
 
+// Interest portion of the payment made in a given calendar month (0 if no
+// payment that month, or past payoff). Only the interest is a P&L expense — the
+// principal just moves cash into the loan-paydown (a balance-sheet event).
+export function interestForMonth(year, month /* 1-12 */) {
+  const n = (year - LOAN.firstPaymentYear) * 12 + (month - LOAN.firstPaymentMonth) + 1;
+  if (n < 1 || n > LOAN.payoffMonth) return 0;
+  const row = LOAN.schedule.find(r => r.n === n);
+  return row ? Math.max(0, row.interest) : 0;
+}
+
 export function loanMonthFor(date = new Date()) {
   const y = date.getFullYear(), m = date.getMonth() + 1;
   return (y - LOAN.firstPaymentYear) * 12 + (m - LOAN.firstPaymentMonth) + 1;

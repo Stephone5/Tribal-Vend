@@ -14,6 +14,7 @@ import { auditData } from "./audit.js";
 import { LOAN, loanStatus } from "./loan.js";
 import { pullSales, pullSalesRange, summarize, startOfWeek, easternNow } from "./sales.js";
 import { getDoc, setDoc, storeReady } from "./store.js";
+import { salesTaxReport } from "./salestax.js";
 import { SLOTS, WINDOW_LABEL } from "./finance.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -92,6 +93,7 @@ async function getSales(force = false) {
   all.sort((a, b) => a.when - b.when);
 
   const sum = summarize(all, costFor);
+  sum.salesTax = salesTaxReport(all, 2026);
   salesCache = { at: Date.now(), sum };
   return sum;
 }
@@ -183,7 +185,7 @@ async function buildLive(force = false) {
       freshAt: salesCache.at,
     } : null,
     window: SALES_WINDOW, monthly: MONTHLY, fixedCosts: FIXED_COSTS,
-    pl: buildPL(sales?.months), loan, balanceSheet, at: Date.now(),
+    pl: buildPL(sales?.months), loan, balanceSheet, salesTax: sales?.salesTax || null, at: Date.now(),
   };
   try { payload.audit = auditData(payload, closet); }
   catch (e) { payload.audit = { issues: [], counts: { critical: 0, warning: 0, info: 0 } }; }

@@ -119,6 +119,7 @@ function paint(root, d, stale) {
   const known = allSlots.filter(s => s.cost != null);
   const S = d.sales;
   const pl = d.pl || [];
+  window.__fixedCosts = d.fixedCosts || [];
 
   // ===================== SECTION 1 · THIS WEEK =====================
   root.appendChild(sectionLabel("This week"));
@@ -150,33 +151,15 @@ function paint(root, d, stale) {
   // ===================== SECTION 2 · THE MONEY =====================
   root.appendChild(sectionLabel("The money"));
 
-  // Profit & loss statement
-  if (pl.length) {
-    const life = pl.reduce((a, p) => ({ rev: a.rev + p.revenue, net: a.net + p.net }), { rev: 0, net: 0 });
-    const plCard = el(`<div class="card"><div class="ct">Profit &amp; loss</div><div class="cs">${pl.length} months · ${money(life.net)} kept on ${money(life.rev)} in sales</div></div>`);
-    const wrap = el(`<div class="scrollx"></div>`);
-    const tbl = el(`<table class="tbl"><thead><tr><th>Month</th><th>Revenue</th><th>Product</th><th>Gross</th><th>Fixed</th><th>Net</th></tr></thead><tbody></tbody></table>`);
-    const tb = tbl.querySelector("tbody");
-    [...pl].reverse().forEach(p => tb.appendChild(el(`<tr><td><b>${p.m}</b></td><td>${money(p.revenue)}</td><td>${money(p.cogs)}</td><td>${money(p.gross)}</td><td>${money(p.fixed)}</td><td class="${p.net >= 0 ? "pos" : "neg"}">${money(p.net)}</td></tr>`)));
-    wrap.appendChild(tbl); plCard.appendChild(wrap);
-    root.appendChild(plCard);
-  }
+  // Standing reminder: the money numbers are only as live as the data feeding
+  // them. Once the OK bank is open, this has to be wired up.
+  root.appendChild(bankFeedBanner());
 
-  // Balance sheet
-  if (d.balanceSheet) {
-    const b = d.balanceSheet;
-    const bs = el(`<div class="card"><div class="ct">Balance sheet</div><div class="cs">What the business owns vs owes, right now</div></div>`);
-    const rows = el(`<div class="rows"></div>`);
-    rows.appendChild(el(`<div class="row"><div class="nm">Cash in the bank<div class="mt">as of ${esc(b.cashAsOf)}</div></div><div class="val">${money(b.cash)}</div></div>`));
-    rows.appendChild(el(`<div class="row"><div class="nm">Product in the machines</div><div class="val">${money(b.machineInventory)}</div></div>`));
-    rows.appendChild(el(`<div class="row"><div class="nm">Product in the closet<div class="mt">${b.closetUnits} units</div></div><div class="val">${money(b.closetInventory)}</div></div>`));
-    rows.appendChild(el(`<div class="row"><div class="nm">Machines (equipment)</div><div class="val">${money(b.equipment)}</div></div>`));
-    rows.appendChild(el(`<div class="row"><div class="nm"><b>Total owned</b></div><div class="val">${money(b.assets)}</div></div>`));
-    rows.appendChild(el(`<div class="row"><div class="nm">Loan still owed</div><div class="val down">−${money(b.liabilities)}</div></div>`));
-    bs.appendChild(rows);
-    bs.appendChild(el(`<div class="note good" style="margin-top:12px"><b>Net worth: ${money(b.equity)}</b> — everything you own, minus the loan.</div>`));
-    root.appendChild(bs);
-  }
+  // Profit & loss — QuickBooks-style hierarchy, then a month-by-month detail.
+  if (pl.length) root.appendChild(plCard(pl));
+
+  // Balance sheet — QuickBooks-style grouping.
+  if (d.balanceSheet) root.appendChild(balanceSheetCard(d.balanceSheet));
 
   // Loan
   if (d.loan) {
@@ -197,9 +180,12 @@ function paint(root, d, stale) {
     if (L.overpayWarning > 0) root.appendChild(el(`<div class="note warn"><b>Stop after payment 93, not 96.</b> The schedule lists 96 but the balance hits zero at 93 — paying all 96 hands over about ${money(L.overpayWarning * L.payment)} you don't owe.</div>`));
   }
 
-  // Break-even + hire threshold
+  // Break-even + hire threshold. This is a CASH question — what you must clear
+  // to cover the bills — so it uses the whole loan payment, not just interest.
   {
-    const fixed = (d.fixedCosts || []).reduce((a, c) => a + c.amount, 0);
+    const opFixed = (d.fixedCosts || []).reduce((a, c) => a + c.amount, 0);
+    const loanPay = d.loan ? d.loan.payment : 0;
+    const fixed = opFixed + loanPay;
     const recent = pl.slice(-3);
     const recentRev = recent.length ? recent.reduce((a, p) => a + p.revenue, 0) / recent.length : 0;
     const breakeven = fixed / GROSS;
@@ -207,7 +193,7 @@ function paint(root, d, stale) {
     const gap = hireNeed - recentRev;
     const bc = el(`<div class="card"><div class="ct">Break-even &amp; hiring</div><div class="cs">Averaging ${money(recentRev)}/month over the last 3 months</div></div>`);
     const rows = el(`<div class="rows"></div>`);
-    rows.appendChild(el(`<div class="row"><div class="nm">Just to break even<div class="mt">cover the ${money(fixed)} fixed costs</div></div><div class="val ${recentRev >= breakeven ? "up" : "down"}">${money(breakeven)}</div></div>`));
+    rows.appendChild(el(`<div class="row"><div class="nm">Just to break even<div class="mt">cover ${money(fixed)}/mo — bills + the ${money(loanPay)} loan payment</div></div><div class="val ${recentRev >= breakeven ? "up" : "down"}">${money(breakeven)}</div></div>`));
     rows.appendChild(el(`<div class="row"><div class="nm">To afford a helper<div class="mt">$${EMP_RATE}/hr, ~${EMP_HRS} hrs/wk on the route (${money(EMP_MONTHLY)}/mo)</div></div><div class="val">${money(hireNeed)}</div></div>`));
     bc.appendChild(rows);
     bc.appendChild(el(`<div class="note ${gap <= 0 ? "good" : ""}">${gap <= 0
@@ -256,6 +242,9 @@ function paint(root, d, stale) {
     root.appendChild(sc);
   }
 
+  // ===================== SALES TAX (subtle, collapsed) =====================
+  if (d.salesTax) root.appendChild(salesTaxCard(d.salesTax));
+
   // ===================== MORE (collapsible) =====================
   root.appendChild(moreSection(d, allSlots, known, S, pl));
 
@@ -268,6 +257,116 @@ function paint(root, d, stale) {
   foot.querySelector("#refreshNow").onclick = async (e) => { e.target.textContent = "Refreshing…"; e.target.disabled = true; try { await apiFetch("/api/live?refresh=1"); } catch (_) {} renderCompany(root); };
 
   window.scrollTo(0, stale ? scrollY : 0);
+}
+
+// ---------- bank-feed reminder (muted red) ----------
+function bankFeedBanner() {
+  return el(`<div style="display:flex;align-items:flex-start;gap:10px;background:rgba(200,55,45,.08);border:1px solid rgba(200,55,45,.18);border-radius:12px;padding:11px 13px;margin-bottom:2px">
+    <span style="width:7px;height:7px;border-radius:50%;background:#b64236;flex:none;margin-top:5px"></span>
+    <span style="flex:1;font-size:12.5px;color:#8f342c;font-weight:600;line-height:1.4">When you open the new bank in Oklahoma, wire its data into this app — Plaid, emailed statements, or a periodic CSV. Until then these numbers only move as fast as the data you feed in.</span></div>`);
+}
+
+// ---------- QuickBooks-style P&L ----------
+function plCard(pl) {
+  const N = pl.length;
+  const sum = k => pl.reduce((a, p) => a + (p[k] || 0), 0);
+  const sales = sum("revenue"), cogs = sum("cogs"), gross = sum("gross");
+  const loanInt = sum("loanInterest"), opFixed = sum("opFixed");
+  const expenses = opFixed + loanInt, net = gross - expenses;
+  const span = `${pl[0].m} – ${pl[N - 1].m}`;
+
+  // one fixed-cost line = its monthly amount × months on record
+  const opLines = (window.__fixedCosts || []).map(c => ({ name: c.name, amt: c.amount * N }));
+
+  const c = el(`<div class="card"><div class="ct">Profit &amp; loss</div><div class="cs">${esc(span)} · ${money(net)} kept on ${money(sales)} in sales</div></div>`);
+  const t = el(`<div class="qb"></div>`);
+  const grp = (label, val, bold) => el(`<div class="qb-h ${bold ? "b" : ""}"><span>${esc(label)}</span><span>${money2(val)}</span></div>`);
+  const line = (label, val, neg) => el(`<div class="qb-l"><span>${esc(label)}</span><span${neg ? ' class="neg"' : ""}>${neg ? "−" : ""}${money2(Math.abs(val))}</span></div>`);
+
+  t.appendChild(grp("Income", sales, true));
+  t.appendChild(line("Sales", sales));
+  t.appendChild(line("Cost of goods (product)", cogs, true));
+  t.appendChild(grp("Gross profit", gross, true));
+  t.appendChild(grp("Expenses", expenses, true));
+  opLines.forEach(l => t.appendChild(line(l.name, l.amt, true)));
+  t.appendChild(line("Loan interest", loanInt, true));
+  t.appendChild(el(`<div class="qb-h b tot"><span>Net income</span><span class="${net >= 0 ? "pos" : "neg"}">${money2(net)}</span></div>`));
+  c.appendChild(t);
+
+  // month-by-month detail, collapsed
+  const tog = el(`<button class="btn ghost" style="margin-top:12px;display:flex;align-items:center;justify-content:center;gap:7px">Month by month <span>▾</span></button>`);
+  const body = el(`<div hidden style="margin-top:10px"></div>`);
+  const wrap = el(`<div class="scrollx"></div>`);
+  const tbl = el(`<table class="tbl"><thead><tr><th>Month</th><th>Sales</th><th>Product</th><th>Gross</th><th>Op+int</th><th>Net</th></tr></thead><tbody></tbody></table>`);
+  const tb = tbl.querySelector("tbody");
+  [...pl].reverse().forEach(p => tb.appendChild(el(`<tr><td><b>${p.m}</b></td><td>${money(p.revenue)}</td><td>${money(p.cogs)}</td><td>${money(p.gross)}</td><td>${money(p.fixed)}</td><td class="${p.net >= 0 ? "pos" : "neg"}">${money(p.net)}</td></tr>`)));
+  wrap.appendChild(tbl); body.appendChild(wrap);
+  tog.onclick = () => { body.hidden = !body.hidden; tog.querySelector("span").textContent = body.hidden ? "▾" : "▴"; };
+  c.appendChild(tog); c.appendChild(body);
+  c.appendChild(el(`<div class="note" style="margin-top:12px">Cash-basis, from your live sales. Product cost is deducted (your tax pro's Schedule C does the same) — that's why net here runs lower than QuickBooks, which parks product cost in inventory instead. Operating costs are estimated at today's monthly rates.</div>`));
+  return c;
+}
+
+// ---------- QuickBooks-style balance sheet ----------
+function balanceSheetCard(b) {
+  const inventory = (b.machineInventory || 0) + (b.closetInventory || 0);
+  const currentAssets = (b.cash || 0) + inventory;
+  const c = el(`<div class="card"><div class="ct">Balance sheet</div><div class="cs">What the business owns vs owes · as of ${esc(b.cashAsOf || "now")}</div></div>`);
+  const t = el(`<div class="qb"></div>`);
+  const grp = (label, val, bold) => t.appendChild(el(`<div class="qb-h ${bold ? "b" : ""}"><span>${esc(label)}</span><span>${money2(val)}</span></div>`));
+  const line = (label, val, sub) => t.appendChild(el(`<div class="qb-l"><span>${esc(label)}${sub ? `<span class="qb-sub">${esc(sub)}</span>` : ""}</span><span>${money2(val)}</span></div>`));
+
+  grp("Assets", b.assets, true);
+  grp("Current assets", currentAssets);
+  line("Cash in bank", b.cash);
+  line("Product inventory", inventory, b.closetUnits ? `machines + ${b.closetUnits} closet units` : "in the machines");
+  grp("Fixed assets", b.equipment);
+  line("Machines (equipment)", b.equipment);
+  t.appendChild(el(`<div class="qb-h b tot"><span>Total assets</span><span>${money2(b.assets)}</span></div>`));
+
+  grp("Liabilities", b.liabilities, true);
+  line("Wendle loan (principal owed)", b.liabilities);
+  grp("Equity", b.equity, true);
+  line("Net worth", b.equity);
+  t.appendChild(el(`<div class="qb-h b tot"><span>Liabilities + equity</span><span>${money2((b.liabilities || 0) + (b.equity || 0))}</span></div>`));
+  c.appendChild(t);
+  c.appendChild(el(`<div class="note good" style="margin-top:12px"><b>Net worth: ${money(b.equity)}</b> — everything you own, minus the loan.</div>`));
+  return c;
+}
+
+// ---------- PA sales tax (subtle, collapsed) ----------
+function salesTaxCard(tax) {
+  const wrap = el(`<div style="margin-top:26px"></div>`);
+  const nextTxt = tax.next ? `next: ${tax.next.label.replace(/·.*/, "").trim()} by ${new Date(tax.next.due + "T12:00:00").toLocaleDateString([], { month: "short", day: "numeric" })}` : "all quarters filed";
+  const tog = el(`<button class="btn ghost" style="display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:13px;color:var(--muted)"><span>PA sales tax · ${tax.year}</span><span style="font-size:12px">${esc(nextTxt)} <span id="txchev">▾</span></span></button>`);
+  const body = el(`<div hidden style="margin-top:10px"></div>`);
+  wrap.appendChild(tog); wrap.appendChild(body);
+  let built = false;
+  tog.onclick = () => {
+    body.hidden = !body.hidden;
+    tog.querySelector("#txchev").textContent = body.hidden ? "▾" : "▴";
+    if (built || body.hidden) return; built = true;
+
+    const c = el(`<div class="card"><div class="ct">Estimated sales tax owed</div><div class="cs">On taxable drinks only · ${money2(tax.ytdTaxDue)} year-to-date</div></div>`);
+    const t = el(`<div class="qb"></div>`);
+    tax.quarters.forEach(q => {
+      const due = new Date(q.due + "T12:00:00").toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" });
+      const isNext = tax.next && q.q === tax.next.q;
+      t.appendChild(el(`<div class="qb-l"><span>${esc(q.label)}<span class="qb-sub">${q.status === "past" ? "was due" : "file by"} ${due}${isNext ? " · next" : ""}</span></span><span${isNext ? ' style="color:var(--s1);font-weight:700"' : ""}>${money2(q.taxDue)}</span></div>`));
+    });
+    t.appendChild(el(`<div class="qb-h b tot"><span>Total ${tax.year}</span><span>${money2(tax.ytdTaxDue)}</span></div>`));
+    c.appendChild(t);
+
+    if (tax.taxableItems && tax.taxableItems.length) {
+      const top = tax.taxableItems.slice(0, 6).map(i => shortName(i.item)).join(", ");
+      c.appendChild(el(`<div class="note" style="margin-top:12px"><b>Taxed items:</b> ${esc(top)}${tax.taxableItems.length > 6 ? ", …" : ""}. Snacks, candy, plain water, tea, and cold coffee aren't taxed.</div>`));
+    }
+    c.appendChild(el(`<div class="note" style="margin-top:8px;font-size:11.5px">Method: taxable gross ÷ 1.06 × 0.06 (61 PA Code § 31.28); items per REV-717. Estimate — verify before filing.</div>`));
+    const go = el(`<a href="${esc(tax.fileUrl)}" target="_blank" rel="noopener" class="btn" style="margin-top:12px;text-decoration:none;display:block;text-align:center">File at myPATH (mypath.pa.gov) →</a>`);
+    c.appendChild(go);
+    body.appendChild(c);
+  };
+  return wrap;
 }
 
 function sectionLabel(text) {

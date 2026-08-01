@@ -114,16 +114,22 @@ export const MONTHLY = [
   { m: "Jun 26", card: 578, cash: 540,  debits: 570,   balance: 1233 },
 ];
 
+// Operating fixed costs — the recurring bills that ARE expenses. The Wendle
+// loan is deliberately NOT here: its payment splits into interest (an expense,
+// added per-month in buildPL) and principal (a balance-sheet paydown, not an
+// expense). Lumping the whole $197.26 in here overstated costs and understated
+// net income — exactly the loan-split fix.
 export const FIXED_COSTS = [
-  { name: "Loan payment (Wendle)", amount: 197.26 },
-  { name: "QuickBooks", amount: 177.02, note: "was $40 in Jan — climbing" },
-  { name: "NEXT insurance", amount: 31.49 },
+  { name: "Software & apps", amount: 177.02, note: "QuickBooks" },
+  { name: "Business insurance", amount: 31.49, note: "NEXT" },
   { name: "Google Workspace", amount: 8.90 },
 ];
 
 // Fallback product-cost ratio (revenue → COGS), used only for months that
 // predate the live transaction feed. Real months use per-item costs instead.
 export const COGS_RATIO = 0.52;
+
+import { interestForMonth } from "./loan.js";
 
 const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
@@ -139,7 +145,7 @@ export function buildPL(salesMonths) {
     const label = `${MON[+sm.m.split("-")[1] - 1]} ${sm.m.slice(2, 4)}`;
     txnBy[label] = sm;
   });
-  const fixed = FIXED_COSTS.reduce((a, c) => a + c.amount, 0);
+  const opFixed = FIXED_COSTS.reduce((a, c) => a + c.amount, 0);
   // Keep every month with any money moving — including the startup month.
   return MONTHLY.filter(m => (m.card + m.cash) > 0 || m.debits > 0).map(m => {
     const tx = txnBy[m.m];
@@ -150,9 +156,13 @@ export function buildPL(salesMonths) {
     } else {
       revenue = deposits; cogs = revenue * COGS_RATIO; gross = revenue - cogs; source = "bank";
     }
+    // Loan INTEREST for this month is an expense; principal is not.
+    const [monStr, yy] = m.m.split(" ");
+    const loanInterest = interestForMonth(2000 + parseInt(yy, 10), MON.indexOf(monStr) + 1);
+    const fixed = opFixed + loanInterest;
     return {
-      m: m.m, revenue, cogs, gross, fixed, net: gross - fixed,
-      balance: m.balance, debits: m.debits, deposits, source,
+      m: m.m, revenue, cogs, gross, fixed, opFixed, loanInterest,
+      net: gross - fixed, balance: m.balance, debits: m.debits, deposits, source,
     };
   });
 }
