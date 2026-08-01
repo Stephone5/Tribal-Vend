@@ -189,15 +189,18 @@ function renderAirvendPlan(area, ctx, plan){
 // ---------- unlock gate (the #lock splash is painted first, from index.html) ----------
 async function ensureUnlocked(){
   const lock = document.getElementById("lock");
+  // Already have a passcode saved → trust it and open instantly. No network
+  // probe on every launch (that was part of the slow start). If it's somehow
+  // wrong, the data calls will 401 and show an error rather than blocking boot.
+  if (localStorage.getItem("tv_pass")){ if(lock) lock.remove(); return; }
+
   let r;
   try { r = await apiFetch("/api/finance"); }
   catch(e){ if(lock) lock.remove(); return; } // offline → let cached UI load
-  if (r.status !== 401){ if(lock) lock.remove(); return; } // open, or pass already valid
+  if (r.status !== 401){ if(lock) lock.remove(); return; } // open (no passcode set)
 
-  // Locked: reveal the passcode form and wait for the right code.
+  // Locked and no passcode yet: show the form and wait for the right code.
   await new Promise(resolve=>{
-    lock.querySelector("#lk-wait").style.display="none";
-    const form=lock.querySelector("#lockform"); form.style.display="block";
     const inp=lock.querySelector("#pc"), err=lock.querySelector("#pcerr"), go=lock.querySelector("#pcgo");
     inp.focus();
     const tryIt=async()=>{

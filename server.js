@@ -153,7 +153,25 @@ async function buildLive(force = false) {
     machines.push({ ...m, slots: rows });
   }
 
-  return {
+  // Balance sheet — what the business owns vs owes, right now.
+  const closet = await getDoc("closet:default").catch(() => null);
+  const cItems = (closet && closet.items) || [];
+  const closetInventory = cItems.reduce((a, i) => a + (Number(i.qty) || 0) * (Number(i.price) || 0), 0);
+  const closetUnits = cItems.reduce((a, i) => a + (Number(i.qty) || 0), 0);
+  const machineInventory = machines.flatMap(m => m.slots)
+    .reduce((a, s) => a + (s.cost != null ? (Number(s.onHand) || 0) * s.cost : 0), 0);
+  const bank = MONTHLY[MONTHLY.length - 1] || {};
+  const loan = loanStatus();
+  const equipment = 13000; // the two machines, at financed cost
+  const assets = (bank.balance || 0) + machineInventory + closetInventory + equipment;
+  const balanceSheet = {
+    cash: bank.balance || 0, cashAsOf: bank.m || "",
+    machineInventory, closetInventory, closetUnits, equipment,
+    assets, loanBalance: loan.balance, liabilities: loan.balance,
+    equity: assets - loan.balance,
+  };
+
+  const payload = {
     machines,
     sales: sales ? {
       thisWeek: sales.thisWeek, lastWeek: sales.lastWeek,
@@ -165,16 +183,34 @@ async function buildLive(force = false) {
       freshAt: salesCache.at,
     } : null,
     window: SALES_WINDOW, monthly: MONTHLY, fixedCosts: FIXED_COSTS,
-    pl: buildPL(), loan: loanStatus(), at: Date.now(),
+    pl: buildPL(), loan, balanceSheet, at: Date.now(),
   };
+  try { payload.audit = auditData(payload, closet); }
+  catch (e) { payload.audit = { issues: [], counts: { critical: 0, warning: 0, info: 0 } }; }
+  return payload;
+}
+
+// Stale-while-revalidate: if we have any cached data, return it INSTANTLY and
+// refresh in the background when it's stale. Only a truly cold cache blocks.
+// Concurrent requests share one in-flight build so we never pull twice at once.
+let liveBuilding = null;
+function refreshLive(force = false) {
+  if (liveBuilding) return liveBuilding;
+  liveBuilding = buildLive(force)
+    .then(d => { liveCache = { at: Date.now(), data: d }; return d; })
+    .finally(() => { liveBuilding = null; });
+  return liveBuilding;
 }
 
 app.get("/api/live", async (req, res) => {
+  const force = req.query.refresh === "1";
+  if (liveCache.data && !force) {
+    const stale = Date.now() - liveCache.at >= INV_TTL;
+    if (stale) refreshLive().catch(() => {}); // fire and forget
+    return res.json(liveCache.data);
+  }
   try {
-    const force = req.query.refresh === "1";
-    if (!force && liveCache.data && Date.now() - liveCache.at < INV_TTL) return res.json(liveCache.data);
-    const data = await buildLive(force);
-    liveCache = { at: Date.now(), data };
+    const data = await refreshLive(force);
     res.json(data);
   } catch (err) {
     if (liveCache.data) return res.json({ ...liveCache.data, stale: true });
@@ -327,4 +363,6 @@ const port = process.env.PORT || 8123;
 app.listen(port, () => {
   const ready = process.env.ANTHROPIC_API_KEY ? "brain CONNECTED" : "brain not connected (no key yet)";
   console.log(`Tribal Vend on http://localhost:${port} — ${ready}`);
+  // Warm the cache on startup so the first real open is instant.
+  loadCostOverrides().then(() => refreshLive()).catch(() => {});
 });
