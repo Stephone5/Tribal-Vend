@@ -40,14 +40,6 @@ function injectStyles() {
   </style>`));
 }
 
-const SUGGESTIONS = [
-  "What should I change this week?",
-  "What's my biggest money leak?",
-  "Which pars are wrong?",
-  "How am I tracking vs last week?",
-  "What should I stop selling?",
-];
-
 // Escape first, then apply formatting — so nothing in a reply can inject markup.
 const escHtml = s => String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
@@ -117,9 +109,6 @@ function paint() {
   msgs.forEach(m => list.appendChild(bubble(m.role, m.content)));
   wrap.appendChild(list);
 
-  const sugg = el(`<div class="ch-sugg"></div>`);
-  SUGGESTIONS.forEach(s => { const b = el(`<button></button>`); b.textContent = s; b.onclick = () => send(s); sugg.appendChild(b); });
-
   const bar = el(`<div class="ch-bar"></div>`);
   const ta = el(`<textarea rows="1" placeholder="Ask about the business…"></textarea>`);
   const btn = el(`<button class="ch-send">↑</button>`);
@@ -128,10 +117,14 @@ function paint() {
   btn.onclick = () => { if (ta.value.trim()) send(ta.value.trim()); };
   bar.appendChild(ta); bar.appendChild(btn);
 
-  wrap.appendChild(sugg); wrap.appendChild(bar);
+  wrap.appendChild(bar);
   ROOT.appendChild(wrap);
   ROOT._list = list; ROOT._ta = ta; ROOT._btn = btn;
-  list.scrollIntoView({ block: "end" });
+  // Open at the BOTTOM of the feed (latest message). The section just un-hid, so
+  // wait for layout to settle before scrolling — double rAF + a fallback tick.
+  const toBottom = () => window.scrollTo(0, document.body.scrollHeight);
+  requestAnimationFrame(() => requestAnimationFrame(toBottom));
+  setTimeout(toBottom, 60);
 }
 
 async function send(text) {

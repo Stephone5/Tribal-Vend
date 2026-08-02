@@ -8,7 +8,7 @@
 // A background update keeps the cached shell fresh: every load we quietly
 // re-fetch the shell and store the new copy for next time.
 
-const CACHE = "tv-v24";
+const CACHE = "tv-v25";
 const SHELL = [
   "./", "./index.html", "./app.js", "./data.js", "./closet.js",
   "./company.js", "./chat.js", "./api.js", "./manifest.webmanifest",

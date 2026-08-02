@@ -9,6 +9,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black">
 <title>Tribal Vend</title>
+<script>/* apply saved theme before first paint — no flash */try{var _t=localStorage.getItem("tv_theme");if(_t)document.documentElement.setAttribute("data-theme",_t);}catch(e){}</script>
 <style>
   :root{
     /* brand */
@@ -34,7 +35,24 @@
 
     --r:18px;
     --shadow:0 1px 2px rgba(28,28,26,.04), 0 6px 18px rgba(28,28,26,.05);
+    --nav-bg:rgba(255,255,255,.94);
   }
+  /* ---------- dark mode: overrides every surface ---------- */
+  :root[data-theme="dark"]{
+    --char:#22222a;
+    --plane:#141417;
+    --surface:#1e1e24;
+    --surface-2:#2a2a32;
+    --line:#34343d;
+    --ink:#f2f1ec;
+    --ink-2:#b7b5ac;
+    --muted:#87857c;
+    --gold-ink:#e6d24a;
+    --good:#3ecf7f; --bad:#ff6b5e; --warn:#e0a83a;
+    --shadow:0 1px 2px rgba(0,0,0,.35), 0 6px 20px rgba(0,0,0,.4);
+    --nav-bg:rgba(24,24,29,.94);
+  }
+  :root[data-theme="dark"] nav button.on{color:var(--ink)}
   *{box-sizing:border-box; -webkit-tap-highlight-color:transparent}
   html{-webkit-text-size-adjust:100%}
   html,body{margin:0; min-height:100%}
@@ -56,6 +74,13 @@
   header .crown{width:26px;height:26px;flex:none}
   header .name{font-weight:800; font-size:18px; letter-spacing:-.01em}
   header .spot{margin-left:auto; font-size:12px; color:rgba(255,255,255,.6); font-weight:500}
+  header .theme-toggle{
+    flex:none; width:34px; height:34px; margin-left:14px; padding:0;
+    background:rgba(255,255,255,.12); border:0; border-radius:50%; cursor:pointer;
+    color:#fff; display:flex; align-items:center; justify-content:center;
+  }
+  header .theme-toggle svg{width:18px; height:18px; stroke:currentColor; fill:none; stroke-width:2; stroke-linecap:round; stroke-linejoin:round}
+  header .theme-toggle:active{background:rgba(255,255,255,.22)}
 
   main{padding:0 16px; max-width:640px; margin:0 auto}
   section[hidden]{display:none}
@@ -215,7 +240,7 @@
   /* ---------- bottom nav ---------- */
   nav{
     position:fixed; left:0; right:0; bottom:0; z-index:30;
-    display:flex; background:rgba(255,255,255,.94);
+    display:flex; background:var(--nav-bg);
     -webkit-backdrop-filter:saturate(180%) blur(20px); backdrop-filter:saturate(180%) blur(20px);
     border-top:1px solid var(--line);
     padding-bottom:env(safe-area-inset-bottom);
@@ -282,6 +307,7 @@
   </svg>
   <span class="name">Tribal Vend</span>
   <span class="spot">2 machines</span>
+  <button class="theme-toggle" id="themeBtn" aria-label="Toggle dark mode"></button>
 </header>
 
 <main>
@@ -305,7 +331,7 @@
     Inventory
   </button>
   <button data-tab="chat">
-    <svg viewBox="0 0 24 24"><path d="M20 11.5a7.5 7.5 0 0 1-7.5 7.5H8l-4 3v-4.6A7.5 7.5 0 0 1 12.5 4 7.5 7.5 0 0 1 20 11.5z"/></svg>
+    <svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H8l-4 4V5a2 2 0 0 1 2-2h13a2 2 0 0 1 2 2z"/></svg>
     Ask
   </button>
 </nav>

@@ -33,9 +33,27 @@ document.querySelectorAll("nav button").forEach(b=>{
     if(tab==="closet") renderCloset($("#closet"));
     if(tab==="company") renderCompany($("#company"));
     if(tab==="chat") renderChat($("#chat"));
-    window.scrollTo(0,0);
+    // Chat manages its own scroll (opens at the bottom); everything else tops out.
+    if(tab!=="chat") window.scrollTo(0,0);
   };
 });
+
+// ---------- light / dark theme ----------
+(function(){
+  const btn = document.getElementById("themeBtn");
+  if(!btn) return;
+  const MOON = `<svg viewBox="0 0 24 24"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>`;
+  const SUN = `<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4.2"/><path d="M12 2v2M12 20v2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M2 12h2M20 12h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4"/></svg>`;
+  const paint = () => { btn.innerHTML = document.documentElement.getAttribute("data-theme")==="dark" ? SUN : MOON; };
+  btn.onclick = () => {
+    const next = document.documentElement.getAttribute("data-theme")==="dark" ? "light" : "dark";
+    document.documentElement.setAttribute("data-theme", next);
+    try{ localStorage.setItem("tv_theme", next); }catch(e){}
+    const tc = document.querySelector('meta[name="theme-color"]'); if(tc) tc.setAttribute("content", next==="dark" ? "#141417" : "#282828");
+    paint();
+  };
+  paint();
+})();
 
 // ---------- Runs section ----------
 let LIVE=null;
