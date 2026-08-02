@@ -184,7 +184,12 @@ async function buildLive(force = false) {
   const inventory = closetInventory;
   const bank = MONTHLY[MONTHLY.length - 1] || {};
   const loan = loanStatus();
-  const equipment = 13000; // the two machines, at financed cost
+  // Equipment at NET BOOK VALUE (MACRS-depreciated), matching Stephen's real
+  // accountant balance sheet — cost basis $11,738 less accumulated depreciation
+  // (Yr1 $2,348 + Yr2 $3,756) = $5,634 as of the 2025 filing. This is why real
+  // owner equity is negative early in the loan. NOT original cost ($13k) — that
+  // overstated net worth.
+  const equipment = 5634;
   const assets = (bank.balance || 0) + inventory + equipment;
   const balanceSheet = {
     cash: bank.balance || 0, cashAsOf: bank.m || "",

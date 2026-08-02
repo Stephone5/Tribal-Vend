@@ -30,7 +30,7 @@ function filterPL(pl, period) {
 }
 
 const LIVE_LSK = "tv_live_cache_v2";
-const GROSS = 0.48;            // gross-margin ratio used in the P&L
+const GROSS = 0.45;            // last-resort fallback only; break-even derives the real margin live from the P&L
 const EMP_RATE = 15, EMP_HRS = 4; // $/hr and hours/week for the "can I hire" math
 const EMP_MONTHLY = Math.round(EMP_RATE * EMP_HRS * 4.333);
 
@@ -229,10 +229,15 @@ function paint(root, d, stale) {
     const fixed = opFixed + loanPay;
     const recent = pl.slice(-3);
     const recentRev = recent.length ? recent.reduce((a, p) => a + p.revenue, 0) / recent.length : 0;
-    const breakeven = fixed / GROSS;
-    const hireNeed = (fixed + EMP_MONTHLY) / GROSS;
+    // Margin is now LIVE, not a guess: real gross ÷ real revenue from the P&L,
+    // then knocked down by inventory shrinkage — the margin you actually keep.
+    const grossSum = pl.reduce((a, p) => a + p.gross, 0), revSum = pl.reduce((a, p) => a + p.revenue, 0);
+    const loss = d.inventoryLoss ? d.inventoryLoss.loss : 0;
+    const margin = revSum ? Math.max(0.05, (grossSum - loss) / revSum) : GROSS;
+    const breakeven = fixed / margin;
+    const hireNeed = (fixed + EMP_MONTHLY) / margin;
     const gap = hireNeed - recentRev;
-    const bc = el(`<div class="card"><div class="ct">Break-even &amp; hiring</div><div class="cs">Averaging ${money(recentRev)}/month over the last 3 months</div></div>`);
+    const bc = el(`<div class="card"><div class="ct">Break-even &amp; hiring</div><div class="cs">Averaging ${money(recentRev)}/mo · at your real ${Math.round(margin * 100)}% margin after shrinkage</div></div>`);
     const rows = el(`<div class="rows"></div>`);
     rows.appendChild(el(`<div class="row"><div class="nm">Just to break even<div class="mt">cover ${money(fixed)}/mo — bills + the ${money(loanPay)} loan payment</div></div><div class="val ${recentRev >= breakeven ? "up" : "down"}">${money(breakeven)}</div></div>`));
     rows.appendChild(el(`<div class="row"><div class="nm">To afford a helper<div class="mt">$${EMP_RATE}/hr, ~${EMP_HRS} hrs/wk on the route (${money(EMP_MONTHLY)}/mo)</div></div><div class="val">${money(hireNeed)}</div></div>`));
@@ -392,8 +397,9 @@ function balanceSheetCard(b) {
   line("Net worth", b.equity);
   t.appendChild(el(`<div class="qb-h b tot"><span>Liabilities + equity</span><span>${money2((b.liabilities || 0) + (b.equity || 0))}</span></div>`));
   c.appendChild(t);
-  c.appendChild(el(`<div class="note good" style="margin-top:12px"><b>Net worth: ${money(b.equity)}</b> — everything you own, minus the loan.</div>`));
-  c.appendChild(el(`<div class="note" style="margin-top:8px;font-size:11.5px">A balance sheet is a snapshot of <i>right now</i> — that's why it has no date buttons like the P&L. Once the bank feed is in, this can be shown as of any past date too.</div>`));
+  const negEq = b.equity < 0;
+  c.appendChild(el(`<div class="note ${negEq ? "warn" : "good"}" style="margin-top:12px"><b>Net worth: ${money(b.equity)}</b> — everything you own, minus the loan.${negEq ? " Negative is normal this early — the loan ($" + Math.round(b.liabilities).toLocaleString() + ") still outweighs the depreciated machines. It climbs as you pay down principal." : ""}</div>`));
+  c.appendChild(el(`<div class="note" style="margin-top:8px;font-size:11.5px">Machines are at depreciated book value ($${b.equipment.toLocaleString()}, MACRS), matching your accountant — not sticker price. A balance sheet is a snapshot of <i>right now</i> — that's why it has no date buttons like the P&L. Once the bank feed is in, this can be shown as of any past date too.</div>`));
   return c;
 }
 
@@ -451,7 +457,7 @@ function cashBridgeCard(d, pl) {
   const lifeNet = pl.reduce((a, p) => a + p.net, 0);
   // Actual cash that went to principal = what's been knocked off the balance
   // (the schedule's principal column understates it because of your overpayments).
-  const principalPaid = Math.max(0, 13000 - (d.loan.balance || 13000));
+  const principalPaid = d.loan.principalPaid != null ? d.loan.principalPaid : Math.max(0, (d.loan.principal || 13000) - (d.loan.balance || 0));
   const inventory = b.inventory != null ? b.inventory : (b.closetInventory || 0);
   const cash = b.cash || 0;
 
