@@ -134,6 +134,24 @@ export const MONTHLY = [
 // added per-month in buildPL) and principal (a balance-sheet paydown, not an
 // expense). Lumping the whole $197.26 in here overstated costs and understated
 // net income — exactly the loan-split fix.
+// Monthly inventory PURCHASES — the REAL cost of inventory acquired, from the
+// bank + Sam's Club Mastercard statements (Sam's CC payments + Walmart/Sam's
+// debit). Source: FNB checking #96460851 + Synchrony statements in Drive. This
+// is the piece the app was blind to; the online-order export only caught ~25% of it.
+// Gasoline is NOT here — that runs on a separate Visa (*6688), confirmed.
+export const INVENTORY_PURCHASES = [
+  { m: "Oct 24", amount: 579.40 }, { m: "Nov 24", amount: 1114.19 }, { m: "Dec 24", amount: 1011.61 },
+  { m: "Jan 25", amount: 507.57 }, { m: "Feb 25", amount: 900.36 }, { m: "Mar 25", amount: 707.78 },
+  { m: "Apr 25", amount: 904.31 }, { m: "May 25", amount: 723.89 }, { m: "Jul 25", amount: 1593.85 },
+  { m: "Sep 25", amount: 643.02 }, { m: "Oct 25", amount: 738.75 }, { m: "Nov 25", amount: 752.03 },
+  { m: "Dec 25", amount: 560.11 }, { m: "Jan 26", amount: 788.65 }, { m: "Feb 26", amount: 820.39 },
+  { m: "Apr 26", amount: 1063.07 },
+];
+// Ending inventory at the close of the purchase-data window (Sortly export 5/31/2026).
+// The reconciliation endpoint for the closed-period loss calc.
+export const INVENTORY_ON_HAND_MAY26 = 738.42;
+export const PURCHASE_DATA_THROUGH = "2026-05";
+
 export const FIXED_COSTS = [
   { name: "Software & apps", amount: 177.02, note: "QuickBooks" },
   { name: "Business insurance", amount: 31.49, note: "NEXT" },

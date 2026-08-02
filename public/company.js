@@ -196,6 +196,9 @@ function paint(root, d, stale) {
   // Balance sheet — QuickBooks-style grouping.
   if (d.balanceSheet) root.appendChild(balanceSheetCard(d.balanceSheet));
 
+  // Inventory loss — live, from real bank/card purchases vs sales.
+  if (d.inventoryLoss) root.appendChild(lossCard(d.inventoryLoss));
+
   // Why profit ≠ cash — the question every owner asks.
   if (pl.length && d.balanceSheet && d.loan) root.appendChild(cashBridgeCard(d, pl));
 
@@ -395,6 +398,54 @@ function balanceSheetCard(b) {
 }
 
 // ---------- profit vs cash bridge ----------
+// ---------- Inventory loss (live) ----------
+function lossCard(L) {
+  const gap = L.bought - L.sold;
+  const c = el(`<div class="card"><div class="ct">Inventory &amp; loss</div><div class="cs">Bought vs sold, from your real bank + Sam's card · through ${esc(L.through)}</div></div>`);
+
+  // hero loss figure
+  c.appendChild(el(`<div style="margin:6px 2px 4px">
+    <div style="display:flex;justify-content:space-between;align-items:baseline">
+      <span style="font-size:28px;font-weight:800;letter-spacing:-.02em;color:var(--bad)">${money2(L.loss)}</span>
+      <span style="font-size:12px;color:var(--muted)">lost · ${L.lossPct.toFixed(1)}% of what you bought</span></div>
+    <div style="font-size:12.5px;color:var(--ink-2);margin-top:4px">Product you paid for that never became a sale — expired, ripped, eaten, or given away.</div>
+  </div>`));
+
+  // cumulative bought vs sold chart — the gap IS inventory + loss
+  c.appendChild(cumChart(L.series));
+  c.appendChild(el(`<div class="legend"><span><i style="background:var(--s2)"></i>Bought (at cost)</span><span><i style="background:var(--s1)"></i>Sold (at cost)</span></div>`));
+
+  const rows = el(`<div class="rows" style="margin-top:10px"></div>`);
+  rows.appendChild(el(`<div class="row"><div class="nm">Inventory bought<div class="mt">Sam's card + debit, from your statements</div></div><div class="val">${money2(L.bought)}</div></div>`));
+  rows.appendChild(el(`<div class="row"><div class="nm">Cost of what sold<div class="mt">real units sold × your unit costs</div></div><div class="val">${money2(L.sold)}</div></div>`));
+  rows.appendChild(el(`<div class="row"><div class="nm">Still on the shelf<div class="mt">Sortly, end of window</div></div><div class="val">${money2(L.onHand)}</div></div>`));
+  rows.appendChild(el(`<div class="row"><div class="nm"><b>Loss</b><div class="mt">bought − sold − on-hand</div></div><div class="val down"><b>${money2(L.loss)}</b></div></div>`));
+  c.appendChild(rows);
+
+  c.appendChild(el(`<div class="note" style="margin-top:12px;font-size:11.5px">Live — recomputes every refresh and extends as new card statements and sales come in. Sold is valued at your <i>current</i> unit costs (higher than years past), so real loss is likely a bit more. Today's on-hand: ${money(L.currentOnHand)}.</div>`));
+  return c;
+}
+
+// two cumulative lines with the gap shaded
+function cumChart(series) {
+  const W = 680, H = 200, L = 6, R = 6, T = 14, B = 22, s = svg(W, H);
+  const hi = niceMax(Math.max(...series.map(d => d.bought)) * 1.08);
+  const iw = W - L - R, ih = H - T - B;
+  const xf = i => L + (i / (series.length - 1)) * iw, yf = v => T + ih - (v / (hi || 1)) * ih;
+  for (let g = 0; g <= 2; g++) { const yv = hi * g / 2, y = yf(yv); ln(s, L, y, W - R, y, "var(--line)"); tx(s, L, y - 4, money(yv), { anchor: "start" }); }
+  // shaded gap between bought and sold
+  let area = `M ${xf(0)} ${yf(series[0].bought)}`;
+  series.forEach((p, i) => area += ` L ${xf(i)} ${yf(p.bought)}`);
+  for (let i = series.length - 1; i >= 0; i--) area += ` L ${xf(i)} ${yf(series[i].sold)}`;
+  pathd(s, area + " Z", "none", 0, "var(--bad)").setAttribute("opacity", ".10");
+  const line = (key, color) => { let d = `M ${xf(0)} ${yf(series[0][key])}`; series.forEach((p, i) => d += ` L ${xf(i)} ${yf(p[key])}`); pathd(s, d, color, 2.2); };
+  line("bought", "var(--s2)");
+  line("sold", "var(--s1)");
+  const lbl = i => { const [y, m] = series[i].m.split("-"); return `${["","Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][+m]} ${y.slice(2)}`; };
+  [0, Math.floor(series.length / 2), series.length - 1].forEach(i => tx(s, xf(i), H - 5, lbl(i)));
+  return s;
+}
+
 function cashBridgeCard(d, pl) {
   const b = d.balanceSheet;
   const lifeNet = pl.reduce((a, p) => a + p.net, 0);
@@ -409,13 +460,15 @@ function cashBridgeCard(d, pl) {
   // ONLY the cash movements we can actually measure. No plug, no forced total.
   c.appendChild(el(`<div style="font-size:12.5px;color:var(--muted);font-weight:700;margin:6px 2px 2px;text-transform:uppercase;letter-spacing:.06em">What we can measure</div>`));
   const t = el(`<div class="qb"></div>`);
+  const invLoss = d.inventoryLoss ? d.inventoryLoss.loss : null;
   t.appendChild(el(`<div class="qb-l"><span>Cash sent to loan principal<span class="qb-sub">real money out; builds equity, never hit the P&amp;L as an expense</span></span><span class="neg">−${money2(principalPaid)}</span></div>`));
-  t.appendChild(el(`<div class="qb-l"><span>Cash tied up in stock on hand<span class="qb-sub">product sitting in machines + closet right now</span></span><span class="neg">−${money2(inventory)}</span></div>`));
+  t.appendChild(el(`<div class="qb-l"><span>Cash tied up in stock on hand<span class="qb-sub">product sitting in the machines + closet</span></span><span class="neg">−${money2(inventory)}</span></div>`));
+  if (invLoss != null) t.appendChild(el(`<div class="qb-l"><span>Inventory loss<span class="qb-sub">bought but never sold — see the card above</span></span><span class="neg">−${money2(invLoss)}</span></div>`));
   c.appendChild(t);
 
-  c.appendChild(el(`<div class="note" style="margin-top:12px"><b>That principal number is the headline.</b> You've put ${money(principalPaid)} of cash into paying down the loan — more than your whole profit — so money has clearly also come <i>in</i> (your QuickBooks shows the owner contributions). Profit funded loan equity, not your checking account.</div>`));
+  c.appendChild(el(`<div class="note" style="margin-top:12px"><b>The loan is the headline.</b> You've put ${money(principalPaid)} of cash into paying down principal — more than your whole profit — so money has clearly also come <i>in</i> (your QuickBooks shows the owner contributions). Profit funded loan equity, stock, and shrinkage, not your checking account.</div>`));
 
-  c.appendChild(el(`<div class="note bad" style="margin-top:10px"><b>What we can't measure yet — and won't fake:</b><br>• <b>Inventory loss</b> — product you bought but never sold (theft, spoilage, jams, miscounts). Real cash gone, invisible until we compare Sam's receipts to AirVend sales.<br>• Money you put in vs. paid yourself, and the machine down payment — needs the bank.<br>• Deposits still clearing — needs the bank.<br>A true cash-flow statement needs those two feeds. I'm not going to invent a number to make it tie out.</div>`));
+  c.appendChild(el(`<div class="note bad" style="margin-top:10px"><b>Still needs the bank feed to close exactly:</b> money you put in vs. paid yourself, the machine down payment, and deposits still clearing. When the Oklahoma bank is wired, this becomes a full cash-flow statement — no gaps.</div>`));
   return c;
 }
 

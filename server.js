@@ -8,7 +8,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { runBrain, askBrain } from "./brain.js";
 import { writeOnHand, getMachineLive } from "./airvend.js";
-import { costFor, costInfo, setCostOverrides, categoryFor, seasonCategoryFor, SOLD_BY_SLOT, SALES_WINDOW, MONTHLY, FIXED_COSTS, buildPL } from "./catalog.js";
+import { costFor, costInfo, setCostOverrides, categoryFor, seasonCategoryFor, SOLD_BY_SLOT, SALES_WINDOW, MONTHLY, FIXED_COSTS, buildPL, INVENTORY_PURCHASES, INVENTORY_ON_HAND_MAY26, PURCHASE_DATA_THROUGH } from "./catalog.js";
 import { CLOSET_SEED } from "./closet-seed.js";
 import { auditData } from "./audit.js";
 import { LOAN, loanStatus } from "./loan.js";
@@ -193,6 +193,29 @@ async function buildLive(force = false) {
     equity: assets - loan.balance,
   };
 
+  // ---- Inventory loss: bought − sold(at cost) − ending inventory, over the
+  // closed window the bank/card data covers (through May 26). Cumulative series
+  // drives the live chart. Recomputes every pull; extends when newer statements land.
+  const MON3 = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  const toKey = lbl => { const [mo, yy] = lbl.split(" "); return `20${yy}-${String(MON3.indexOf(mo)+1).padStart(2,"0")}`; };
+  const purchByKey = {}; INVENTORY_PURCHASES.forEach(p => { purchByKey[toKey(p.m)] = p.amount; });
+  const soldByKey = {}; if (sales) sales.months.forEach(m => { soldByKey[m.m] = m.revenue - m.profit; });
+  const lossMonths = [];
+  for (let y = 2024, mo = 9; ;) {
+    const k = `${y}-${String(mo).padStart(2,"0")}`; lossMonths.push(k);
+    if (k === PURCHASE_DATA_THROUGH) break;
+    mo++; if (mo > 12) { mo = 1; y++; }
+  }
+  let cb = 0, cs = 0;
+  const lossSeries = lossMonths.map(k => { cb += purchByKey[k] || 0; cs += soldByKey[k] || 0; return { m: k, bought: cb, sold: cs }; });
+  const boughtTotal = cb, soldTotal = cs;
+  const lossValue = boughtTotal - soldTotal - INVENTORY_ON_HAND_MAY26;
+  const inventoryLoss = {
+    bought: boughtTotal, sold: soldTotal, onHand: INVENTORY_ON_HAND_MAY26,
+    loss: lossValue, lossPct: boughtTotal ? (lossValue / boughtTotal) * 100 : 0,
+    series: lossSeries, through: "May 2026", currentOnHand: inventory,
+  };
+
   const payload = {
     machines,
     sales: sales ? {
@@ -205,7 +228,7 @@ async function buildLive(force = false) {
       freshAt: salesCache.at,
     } : null,
     window: SALES_WINDOW, monthly: MONTHLY, fixedCosts: FIXED_COSTS,
-    pl: buildPL(sales?.months), loan, balanceSheet, salesTax: sales?.salesTax || null, at: Date.now(),
+    pl: buildPL(sales?.months), loan, balanceSheet, inventoryLoss, salesTax: sales?.salesTax || null, at: Date.now(),
   };
   try { payload.audit = auditData(payload, closet); }
   catch (e) { payload.audit = { issues: [], counts: { critical: 0, warning: 0, info: 0 } }; }
