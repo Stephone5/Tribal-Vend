@@ -63,40 +63,83 @@ async function getLive(){
   return LIVE;
 }
 
+const cleanItem = p => String(p||"").replace(/^(Meals|Drinks|Crackers|Snacks|Candy)\s*[-:]\s*/i,"").replace(/,.*$/,"").replace(/\s*\d+(\.\d+)?\s*(oz|fl oz|ct|count|piece|pk|bottle).*$/i,"").trim();
+
 async function renderRuns(){
-  const root=$("#runs"); root.innerHTML=`<h2>Service a machine</h2><div class="empty">Loading machines…</div>`;
+  const root=$("#runs"); root.innerHTML=`<h2>Refill to par</h2><div class="empty">Reading the machines from AirVend…</div>`;
   const live=await getLive();
   root.innerHTML="";
-  root.appendChild(el(`<h2>Service a machine</h2>`));
+  root.appendChild(el(`<h2>Refill to par</h2>`));
 
-  const machines = (live && live.machines) ? live.machines : MACHINES.map(m=>({id:m.id,name:m.name,slots:[]}));
+  const machines = (live && live.machines && live.machines.length) ? live.machines : null;
+  if(!machines){
+    root.appendChild(el(`<div class="empty">Couldn't reach AirVend to read on-hand counts.</div>`));
+    const rb=el(`<button class="btn ghost">Retry</button>`); rb.onclick=()=>{LIVE=null;renderRuns();}; root.appendChild(rb);
+    return;
+  }
+
   const pick=el(`<div class="field"><label>Machine</label><select id="mpick"></select></div>`);
   const sel=pick.querySelector("select");
   machines.forEach(m=>sel.appendChild(el(`<option value="${m.id}">${m.name}</option>`)));
   root.appendChild(pick);
 
-  root.appendChild(el(`<div class="note">Everything's full to par unless you say otherwise. Find the few slots that came up short and enter <b>how many are missing</b>. Leave the rest blank — the app fills them to par.</div>`));
-  root.appendChild(el(`<h2 style="margin-top:22px">Short slots <span style="text-transform:none;letter-spacing:0;color:var(--muted);font-weight:400">— enter how many are missing</span></h2>`));
-
-  const list=el(`<div class="parlist"></div>`);
-  root.appendChild(list);
-
-  function paintSlots(){
-    const m = machines.find(x=>String(x.id)===String(sel.value)) || machines[0];
-    list.innerHTML="";
-    (m.slots||[]).forEach(sl=>{
-      const nm = String(sl.product||"").replace(/^(Meals|Drinks|Crackers)\s*[-:]\s*/i,"").slice(0,30);
-      list.appendChild(el(`<div class="par"><div class="sl">${sl.slot}</div><div class="pi">${nm}</div><input type="text" inputmode="numeric" placeholder="missing" data-slot="${sl.slot}" data-item="${nm.replace(/"/g,'&quot;')}"></div>`));
-    });
-    if(!(m.slots||[]).length) list.appendChild(el(`<div class="empty">Couldn't load this machine's slots.</div>`));
-  }
-  sel.onchange=paintSlots; paintSlots();
-
-  const gen=el(`<button class="btn">Generate →</button>`);
-  const out=el(`<div id="buyout"></div>`);
-  gen.onclick=()=>buildBuyList(sel,list,out,gen);
-  root.appendChild(gen);
+  const out=el(`<div id="refillout"></div>`);
   root.appendChild(out);
+
+  function paint(){
+    const m = machines.find(x=>String(x.id)===String(sel.value)) || machines[0];
+    out.innerHTML="";
+    const slots=(m.slots||[]).map(s=>({slot:s.slot, item:cleanItem(s.product), raw:s.product, onHand:Number(s.onHand)||0, par:Number(s.max)||0}))
+      .map(s=>({...s, need:Math.max(0, s.par - s.onHand)}));
+    const need=slots.filter(s=>s.need>0).sort((a,b)=>(+a.slot)-(+b.slot));
+    const totalUnits=need.reduce((a,s)=>a+s.need,0);
+
+    if(!(m.slots||[]).length){ out.appendChild(el(`<div class="empty">Couldn't load this machine's slots.</div>`)); return; }
+    if(!need.length){ out.appendChild(el(`<div class="note good"><b>Full to par.</b> Nothing to refill on ${m.name}.</div>`)); return; }
+
+    // 1) What to bring — package roll-up (how you actually buy it)
+    const groups={};
+    need.forEach(s=>{ const g=packageOf(s.raw); if(!groups[g.key])groups[g.key]={label:g.label,units:0,slots:[]}; groups[g.key].units+=s.need; groups[g.key].slots.push(s.slot); });
+    const glist=Object.values(groups).sort((a,b)=>b.units-a.units);
+    const bring=el(`<div class="card buy"><div class="ct">Bring to the machine</div><div class="cs">${totalUnits} units · ${need.length} slots short · summed how you buy</div></div>`);
+    const brows=el(`<div class="rows"></div>`);
+    glist.forEach(g=>{ const many=g.slots.length>1; brows.appendChild(el(`<div class="row"><div class="nm">${g.label}<div class="mt">${many?`slots ${g.slots.join(", ")}`:`slot ${g.slots[0]}`}</div></div><div class="val">${g.units}</div></div>`)); });
+    bring.appendChild(brows); out.appendChild(bring);
+
+    // 2) By slot — exactly like AirVend's Refill to Par
+    const c=el(`<div class="card"><div class="ct">By slot</div><div class="cs">Refill = par − on hand · live from AirVend</div></div>`);
+    const wrap=el(`<div class="scrollx"></div>`);
+    const tbl=el(`<table class="tbl"><thead><tr><th>Slot</th><th>Item</th><th>On&nbsp;hand</th><th>Par</th><th>Refill</th></tr></thead><tbody></tbody></table>`);
+    const tb=tbl.querySelector("tbody");
+    need.forEach(s=>tb.appendChild(el(`<tr><td><b>${s.slot}</b></td><td style="text-align:left">${s.item}</td><td>${s.onHand}</td><td>${s.par}</td><td class="pos">${s.need}</td></tr>`)));
+    wrap.appendChild(tbl); c.appendChild(wrap); out.appendChild(c);
+
+    // 3) optional: turn it into a Sam's whole-case list via the brain
+    const gen=el(`<button class="btn ghost" style="margin-top:12px">Turn into a Sam's case list →</button>`);
+    const bout=el(`<div></div>`);
+    gen.onclick=()=>buildBuyListFromNeeds(m.name, need, bout, gen);
+    out.appendChild(gen); out.appendChild(bout);
+  }
+  sel.onchange=paint; paint();
+
+  const rb=el(`<button class="btn ghost" style="margin-top:16px">↻ Refresh from AirVend</button>`);
+  rb.onclick=async()=>{ rb.textContent="Refreshing…"; rb.disabled=true; try{ await apiFetch("/api/live?refresh=1"); }catch(e){} LIVE=null; renderRuns(); };
+  root.appendChild(rb);
+}
+
+async function buildBuyListFromNeeds(machine, need, out, gen){
+  const shorts=need.map(s=>({slot:s.slot, item:s.item, missing:s.need}));
+  out.innerHTML=""; gen.disabled=true; gen.textContent="Thinking…";
+  let res, body;
+  try{
+    res=await apiFetch("/api/generate",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({machine,shorts})});
+    body=await res.json();
+  }catch(e){ gen.disabled=false; gen.textContent="Turn into a Sam's case list →"; out.appendChild(el(`<div class="note">Couldn't reach the brain — the list above is your refill.</div>`)); return; }
+  gen.disabled=false; gen.textContent="Turn into a Sam's case list →";
+  if(res.status===503 || body.error==="no_key" || !res.ok || body.error){
+    out.appendChild(el(`<div class="note">${body.message||"The brain isn't connected yet."} The refill list above is what you need.</div>`)); return;
+  }
+  renderBrain(out, body, {machine});
 }
 
 async function buildBuyList(sel, list, out, gen){
