@@ -63,7 +63,11 @@ async function getLive(){
   return LIVE;
 }
 
-const cleanItem = p => String(p||"").replace(/^(Meals|Drinks|Crackers|Snacks|Candy)\s*[-:]\s*/i,"").replace(/,.*$/,"").replace(/\s*\d+(\.\d+)?\s*(oz|fl oz|ct|count|piece|pk|bottle).*$/i,"").trim();
+const cleanItem = p => {
+  let s = String(p||"").replace(/^(Meals|Drinks|Crackers|Snacks|Candy)\s*[-:]\s*/i,"").replace(/^\d+(\.\d+)?\s*oz\s*[-:]\s*/i,"");
+  const trimmed = s.replace(/,.*$/,"").replace(/\s*\d+(\.\d+)?\s*(oz|fl oz|ct|count|piece|pk)\b.*$/i,"").trim();
+  return trimmed || s.replace(/,.*$/,"").trim() || s.trim(); // never blank
+};
 
 async function renderRuns(){
   const root=$("#runs"); root.innerHTML=`<h2>Refill to par</h2><div class="empty">Reading the machines from AirVend…</div>`;
