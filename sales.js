@@ -14,15 +14,18 @@ const BASE_PARAMS = {
   MachineId: [69157, 69180], ShowCategory: true,
 };
 
-// --- week helpers (MONDAY start, in Eastern time) ---
-// Stephen fills the machines every Monday, so the business week runs Monday →
-// Sunday and resets each Monday — matching his service cycle.
+// --- week helpers (reset MONDAY MIDNIGHT, in Eastern time) ---
+// Stephen fills the machines every Monday, so the selling week ENDS Monday night
+// and resets at Monday midnight. That means the week runs TUESDAY 00:00 → the
+// following MONDAY 23:59, and the current Monday is the LAST day of the week —
+// so on a Monday you see the full week's sales piled up, then it zeroes at
+// midnight for the new week.
 export function easternNow() {
   return new Date(new Date().toLocaleString("en-US", { timeZone: "America/New_York" }));
 }
 export function startOfWeek(d = easternNow()) {
   const x = new Date(d); x.setHours(0, 0, 0, 0);
-  const back = (x.getDay() + 6) % 7; // days since Monday (Sun=6, Mon=0, …)
+  const back = (x.getDay() - 2 + 7) % 7; // days since Tuesday (Tue=0 … Mon=6)
   x.setDate(x.getDate() - back);
   return x;
 }

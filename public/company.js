@@ -158,19 +158,21 @@ function paint(root, d, stale) {
   // ===================== SECTION 1 · THIS WEEK =====================
   root.appendChild(sectionLabel("This week"));
 
-  const dow = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"], todayIdx = new Date().getDay();
   const wkP = S ? S.thisWeek.profit : 0, wkR = S ? S.thisWeek.revenue : 0, wkU = S ? S.thisWeek.units : 0;
-  const lwP = S ? S.lastWeek.profit : 0;
-  const pace = todayIdx >= 6 ? 1 : (todayIdx + 1) / 7, lwSoFar = lwP * pace;
-  const wkDelta = lwSoFar > 0 ? ((wkP - lwSoFar) / lwSoFar) * 100 : 0;
+  const lwR = S ? S.lastWeek.revenue : 0;
+  // Pace = how far into THIS week we are (0→1), from the real week start —
+  // so the vs-last-week compare is apples to apples no matter the day.
+  const elapsed = S ? Math.min(1, Math.max(0.03, (Date.now() - new Date(S.weekStart).getTime()) / (7 * 864e5))) : 1;
+  const lwSoFar = lwR * elapsed;
+  const wkDelta = lwSoFar > 0 ? ((wkR - lwSoFar) / lwSoFar) * 100 : 0;
 
   root.appendChild(el(`<div class="hero">
-    <div class="k">Profit so far</div>
-    <div class="v">${money2(wkP)}</div>
-    <div class="sub">${money2(wkR)} in sales · <b>${wkU}</b> units · through ${dow[todayIdx]}</div>
+    <div class="k">Sales this week</div>
+    <div class="v">${money2(wkR)}</div>
+    <div class="sub"><b>${money2(wkP)}</b> profit · ${wkU} units · resets Mon midnight</div>
     <div class="delta ${wkDelta >= 0 ? "up" : "down"}">${wkDelta >= 0 ? "▲" : "▼"} ${pct(wkDelta)} vs this point last week</div>
     <div class="chips">
-      <span class="chip"><span>Last week</span><b>${money(lwP)}</b></span>
+      <span class="chip"><span>Last week</span><b>${money(lwR)}</b></span>
       <span class="chip"><span>Empty now</span><b>${allSlots.filter(s => s.onHand === 0).length}</b></span>
       <span class="chip"><span>Avg fill</span><b>${Math.round(allSlots.reduce((a, s) => a + s.fillPct, 0) / (allSlots.length || 1))}%</b></span>
     </div>
@@ -302,7 +304,40 @@ function paint(root, d, stale) {
   root.appendChild(foot);
   foot.querySelector("#refreshNow").onclick = async (e) => { e.target.textContent = "Refreshing…"; e.target.disabled = true; try { await apiFetch("/api/live?refresh=1"); } catch (_) {} renderCompany(root); };
 
+  // Deliberate, rare full re-read of AirVend (double-confirmed).
+  root.appendChild(airvendResyncButton());
+
   window.scrollTo(0, stale ? scrollY : 0);
+}
+
+// ---- deliberate "re-read everything from AirVend" (double-confirm) ----
+function airvendResyncButton() {
+  const wrap = el(`<div style="text-align:center;margin-top:20px;padding-top:16px;border-top:1px solid var(--line)"></div>`);
+  const b = el(`<button class="btn ghost" style="width:auto;display:inline-block;padding:9px 16px;margin:0;color:var(--muted);font-size:12px">⟳ Re-read everything from AirVend</button>`);
+  b.onclick = confirmResync;
+  wrap.appendChild(b);
+  return wrap;
+}
+function confirmResync() {
+  const modal = el(`<div style="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:70;display:flex;align-items:center;justify-content:center;padding:24px"></div>`);
+  const sheet = el(`<div style="background:var(--surface);border-radius:20px;max-width:430px;width:100%;padding:22px 20px;box-shadow:var(--shadow)">
+    <div style="font-weight:800;font-size:18px;color:var(--ink)">Re-read everything from AirVend?</div>
+    <div style="color:var(--ink-2);font-size:13.5px;line-height:1.5;margin-top:9px">Use this <b>only after you changed something in AirVend itself</b> — a par, a price, a swapped product. It replaces the app's planogram, pars, prices and on-hand with whatever AirVend says right now.</div>
+    <div style="color:var(--muted);font-size:12px;margin-top:9px">It won't touch your closet or your cost corrections. You rarely need this.</div>
+    <button id="rs-yes" class="btn" style="margin-top:16px;background:var(--bad);color:#fff">Yes, re-read from AirVend</button>
+    <button id="rs-no" class="btn ghost" style="margin-top:8px">Cancel</button>
+  </div>`);
+  modal.appendChild(sheet); document.body.appendChild(modal);
+  modal.onclick = e => { if (e.target === modal) modal.remove(); };
+  sheet.querySelector("#rs-no").onclick = () => modal.remove();
+  const yes = sheet.querySelector("#rs-yes");
+  let armed = false;
+  yes.onclick = async () => {
+    if (!armed) { armed = true; yes.textContent = "Tap again to confirm"; yes.style.background = "var(--warn)"; return; } // double-confirm
+    yes.disabled = true; yes.textContent = "Reading AirVend…";
+    try { if (window.tvResyncAirVend) await window.tvResyncAirVend(); } catch (_) {}
+    modal.remove();
+  };
 }
 
 // ---------- bank-feed reminder (muted red) ----------

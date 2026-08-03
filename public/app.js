@@ -63,6 +63,18 @@ async function getLive(){
   return LIVE;
 }
 
+// Deliberate, rare full re-read of AirVend — forces the server to re-pull the
+// live planogram (pars, prices, swapped products, on-hand), clears every client
+// cache, and re-renders both tabs. Triggered only from the double-confirm button.
+window.tvResyncAirVend = async function(){
+  try{ localStorage.removeItem("tv_live_cache_v2"); }catch(e){}
+  LIVE=null;
+  try{ await apiFetch("/api/live?refresh=1"); }catch(e){}
+  LIVE=null; // ensure the fresh pull is fetched, not a stale in-memory copy
+  renderCompany($("#company"));
+  renderRuns();
+};
+
 const cleanItem = p => {
   let s = String(p||"").replace(/^(Meals|Drinks|Crackers|Snacks|Candy)\s*[-:]\s*/i,"").replace(/^\d+(\.\d+)?\s*oz\s*[-:]\s*/i,"");
   const trimmed = s.replace(/,.*$/,"").replace(/\s*\d+(\.\d+)?\s*(oz|fl oz|ct|count|piece|pk)\b.*$/i,"").trim();
