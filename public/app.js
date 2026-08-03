@@ -73,6 +73,7 @@ window.tvResyncAirVend = async function(){
   LIVE=null; // ensure the fresh pull is fetched, not a stale in-memory copy
   renderCompany($("#company"));
   renderRuns();
+  renderCloset($("#closet")); // re-pull the closet too so no tab is left stale
 };
 
 const cleanItem = p => {
@@ -113,22 +114,22 @@ async function renderRuns(){
     if(!(m.slots||[]).length){ out.appendChild(el(`<div class="empty">Couldn't load this machine's slots.</div>`)); return; }
     if(!need.length){ out.appendChild(el(`<div class="note good"><b>Full to par.</b> Nothing to refill on ${m.name}.</div>`)); return; }
 
-    // 1) What to bring — package roll-up (how you actually buy it)
+    // ONE list — grouped by package (how you buy it), with the per-slot fill
+    // detail nested underneath. All Sun Chips / Miss Vickie's / Snyder's /
+    // Gatorade collapse into a single line (Arizona flavors stay separate); the
+    // number on the right is the package total, the sub-line is where each unit
+    // goes. Fixes the Bring-vs-By-slot split and the "listed twice" problem.
     const groups={};
-    need.forEach(s=>{ const g=packageOf(s.raw); if(!groups[g.key])groups[g.key]={label:g.label,units:0,slots:[]}; groups[g.key].units+=s.need; groups[g.key].slots.push(s.slot); });
-    const glist=Object.values(groups).sort((a,b)=>b.units-a.units);
-    const bring=el(`<div class="card buy"><div class="ct">Bring to the machine</div><div class="cs">${totalUnits} units · ${need.length} slots short · summed how you buy</div></div>`);
-    const brows=el(`<div class="rows"></div>`);
-    glist.forEach(g=>{ const many=g.slots.length>1; brows.appendChild(el(`<div class="row"><div class="nm">${g.label}<div class="mt">${many?`slots ${g.slots.join(", ")}`:`slot ${g.slots[0]}`}</div></div><div class="val">${g.units}</div></div>`)); });
-    bring.appendChild(brows); out.appendChild(bring);
-
-    // 2) By slot — exactly like AirVend's Refill to Par
-    const c=el(`<div class="card"><div class="ct">By slot</div><div class="cs">Refill = par − on hand · live from AirVend</div></div>`);
-    const wrap=el(`<div class="scrollx"></div>`);
-    const tbl=el(`<table class="tbl"><thead><tr><th>Slot</th><th>Item</th><th>On&nbsp;hand</th><th>Par</th><th>Refill</th></tr></thead><tbody></tbody></table>`);
-    const tb=tbl.querySelector("tbody");
-    need.forEach(s=>tb.appendChild(el(`<tr><td><b>${s.slot}</b></td><td style="text-align:left">${s.item}</td><td>${s.onHand}</td><td>${s.par}</td><td class="pos">${s.need}</td></tr>`)));
-    wrap.appendChild(tbl); c.appendChild(wrap); out.appendChild(c);
+    need.forEach(s=>{ const g=packageOf(s.raw); if(!groups[g.key])groups[g.key]={label:g.label,total:0,slots:[]}; groups[g.key].total+=s.need; groups[g.key].slots.push(s); });
+    const glist=Object.values(groups).sort((a,b)=>b.total-a.total);
+    const fullCount=slots.length-need.length;
+    const c=el(`<div class="card buy"><div class="ct">Refill list · ${m.name}</div><div class="cs">${totalUnits} units to buy across ${need.length} slots · ${fullCount} already at par</div></div>`);
+    const rows=el(`<div class="rows"></div>`);
+    glist.forEach(g=>{
+      const detail=g.slots.slice().sort((a,b)=>(+a.slot)-(+b.slot)).map(s=>`#${s.slot} ${s.onHand}/${s.par} (+${s.need})`).join(" · ");
+      rows.appendChild(el(`<div class="row"><div class="nm">${g.label}<div class="mt">${detail}</div></div><div class="val">+${g.total}</div></div>`));
+    });
+    c.appendChild(rows); out.appendChild(c);
 
     // 3) optional: turn it into a Sam's whole-case list via the brain
     const gen=el(`<button class="btn ghost" style="margin-top:12px">Turn into a Sam's case list →</button>`);
