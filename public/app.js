@@ -123,6 +123,15 @@ async function renderRuns(){
     const bout=el(`<div></div>`);
     gen.onclick=()=>buildBuyListFromNeeds(m.name, need, bout, gen);
     out.appendChild(gen); out.appendChild(bout);
+
+    // --- After filling: push actual on-hand back to AirVend ---
+    const upd=el(`<div style="margin-top:20px"></div>`);
+    const updBtn=el(`<button class="btn">✓ I filled it — update AirVend on-hand</button>`);
+    const updBody=el(`<div hidden style="margin-top:12px"></div>`);
+    upd.appendChild(updBtn); upd.appendChild(updBody);
+    let upBuilt=false;
+    updBtn.onclick=()=>{ updBody.hidden=!updBody.hidden; updBtn.textContent=updBody.hidden?"✓ I filled it — update AirVend on-hand":"Hide"; if(upBuilt||updBody.hidden)return; upBuilt=true; buildUpdatePanel(m, updBody); };
+    out.appendChild(upd);
   }
   sel.onchange=paint; paint();
 
@@ -144,6 +153,58 @@ async function buildBuyListFromNeeds(machine, need, out, gen){
     out.appendChild(el(`<div class="note">${body.message||"The brain isn't connected yet."} The refill list above is what you need.</div>`)); return;
   }
   renderBrain(out, body, {machine});
+}
+
+// Build the "update AirVend on-hand" panel: one input per slot pre-set to par
+// (= what you filled to). Change only the slots you filled short, then preview.
+function buildUpdatePanel(m, body){
+  body.appendChild(el(`<div class="note warn">Sets AirVend's <b>on-hand</b> to what you actually filled — the same as Edit → <b>Update on hand</b> in AirVend (not "quantity added"). Every slot defaults to <b>par</b>; change only the ones you filled short. Nothing is written until you preview and confirm.</div>`));
+  const rows=el(`<div class="rows" style="margin-top:10px"></div>`);
+  (m.slots||[]).slice().sort((a,b)=>(+a.slot)-(+b.slot)).forEach(s=>{
+    const par=Number(s.max)||0;
+    rows.appendChild(el(`<div class="row"><div class="nm">${cleanItem(s.product)}<div class="mt">slot ${s.slot} · par ${par} · now ${s.onHand}</div></div><input class="uq" inputmode="numeric" value="${par}" data-slot="${s.slot}" data-par="${par}" style="width:56px;height:40px;text-align:center;font-size:17px;font-weight:800;background:var(--surface-2);border:1.5px solid var(--line);border-radius:11px;color:var(--ink)"></div>`));
+  });
+  body.appendChild(rows);
+  const prev=el(`<button class="btn ghost" style="margin-top:12px">Preview what changes →</button>`);
+  const planOut=el(`<div></div>`);
+  prev.onclick=()=>previewWrite(m, body, planOut, prev);
+  body.appendChild(prev); body.appendChild(planOut);
+}
+
+function collectGaps(body){
+  return [...body.querySelectorAll(".uq")].map(i=>{
+    const par=+i.dataset.par; let v=parseInt(i.value,10); if(isNaN(v)) v=par; v=Math.max(0,Math.min(par,v));
+    return { slot:i.dataset.slot, missing:par-v };
+  }).filter(g=>g.missing>0);
+}
+
+async function previewWrite(m, body, out, prevBtn){
+  const gaps=collectGaps(body);
+  out.innerHTML=""; prevBtn.disabled=true; prevBtn.textContent="Reading AirVend…";
+  let res;
+  try{ res=await (await apiFetch("/api/airvend/preview",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({machineId:m.id, gaps})})).json(); }
+  catch(e){ prevBtn.disabled=false; prevBtn.textContent="Preview what changes →"; out.appendChild(el(`<div class="note bad">Couldn't reach AirVend to preview. Nothing changed.</div>`)); return; }
+  prevBtn.disabled=false; prevBtn.textContent="Preview what changes →";
+  if(res.error){ out.appendChild(el(`<div class="note bad">${res.message||"Preview failed."}</div>`)); return; }
+  const changes=(res.plan||[]).filter(p=>Number(p.from)!==Number(p.to));
+  if(!changes.length){ out.appendChild(el(`<div class="note">AirVend already matches — nothing to write.</div>`)); return; }
+  const c=el(`<div class="card"><div class="ct">Preview · ${changes.length} slot${changes.length===1?"":"s"} change</div><div class="cs">Nothing has been written yet</div></div>`);
+  const rows=el(`<div class="rows"></div>`);
+  changes.forEach(p=>rows.appendChild(el(`<div class="row"><div class="nm">${cleanItem(p.product)}<div class="mt">slot ${p.slot}</div></div><div class="val">${p.from} → <b>${p.to}</b></div></div>`)));
+  c.appendChild(rows); out.appendChild(c);
+  const conf=el(`<button class="btn" style="margin-top:12px;background:var(--bad);color:#fff">Confirm — write ${changes.length} to AirVend</button>`);
+  conf.onclick=()=>confirmWrite(m, gaps, out, conf);
+  out.appendChild(conf);
+}
+
+async function confirmWrite(m, gaps, out, btn){
+  btn.disabled=true; btn.textContent="Writing to AirVend…";
+  let res;
+  try{ res=await (await apiFetch("/api/airvend/write",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({machineId:m.id, gaps})})).json(); }
+  catch(e){ btn.disabled=false; btn.textContent="Confirm — write to AirVend"; out.appendChild(el(`<div class="note bad">Couldn't reach AirVend. Nothing changed.</div>`)); return; }
+  if(res.error || res.dryRun){ btn.disabled=false; btn.textContent="Confirm — write to AirVend"; out.appendChild(el(`<div class="note bad">${res.message||"Write failed — nothing changed."}</div>`)); return; }
+  out.innerHTML=""; out.appendChild(el(`<div class="note good"><b>Done — AirVend updated.</b> On-hand set for ${res.wrote} slots on ${m.name}. Open AirVend to confirm it took, then hit Refresh here.</div>`));
+  LIVE=null;
 }
 
 async function buildBuyList(sel, list, out, gen){

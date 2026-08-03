@@ -14,13 +14,16 @@ const BASE_PARAMS = {
   MachineId: [69157, 69180], ShowCategory: true,
 };
 
-// --- week helpers (Sunday start, in Eastern time) ---
+// --- week helpers (MONDAY start, in Eastern time) ---
+// Stephen fills the machines every Monday, so the business week runs Monday →
+// Sunday and resets each Monday — matching his service cycle.
 export function easternNow() {
   return new Date(new Date().toLocaleString("en-US", { timeZone: "America/New_York" }));
 }
 export function startOfWeek(d = easternNow()) {
   const x = new Date(d); x.setHours(0, 0, 0, 0);
-  x.setDate(x.getDate() - x.getDay()); // 0 = Sunday
+  const back = (x.getDay() + 6) % 7; // days since Monday (Sun=6, Mon=0, …)
+  x.setDate(x.getDate() - back);
   return x;
 }
 export function startOfMonth(d = easternNow()) {
