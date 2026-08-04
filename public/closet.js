@@ -145,11 +145,29 @@ function paint(){
   const totValue = d.items.reduce((a,i)=>a+(Number(i.qty)||0)*(Number(i.price)||0),0);
 
   root.appendChild(elc(`<h2>Inventory</h2>`));
-  const sum = elc(`<div class="cl-sum">
-    <div class="tile"><div class="k">Total units</div><div class="v">${totUnits.toLocaleString()}</div><div class="d" style="color:var(--muted)">across all folders</div></div>
-    <div class="tile"><div class="k">Total value</div><div class="v">${usd(totValue)}</div><div class="d" style="color:var(--muted)">at your unit prices</div></div>
-  </div>`);
-  root.appendChild(sum);
+
+  // LIVE count: what you counted at the last fill, minus everything sold since —
+  // drops with every sale, resets when you recount. Falls back to the static
+  // count if the sales feed isn't available.
+  const live = d.live;
+  let sum;
+  if (live && live.baseline) {
+    const liveUnits = live.liveUnits;
+    const liveValue = totValue * (live.baseline ? liveUnits / live.baseline : 1);
+    const dateTxt = new Date(live.countedAt + "T12:00:00").toLocaleDateString([], { month:"short", day:"numeric" });
+    sum = elc(`<div class="cl-sum">
+      <div class="tile"><div class="k">In stock now</div><div class="v">${liveUnits.toLocaleString()}</div><div class="d" style="color:var(--muted)">${live.soldSince} sold since ${dateTxt}</div></div>
+      <div class="tile"><div class="k">Value in stock</div><div class="v">${usd(liveValue)}</div><div class="d" style="color:var(--muted)">of ${usd(totValue)} counted</div></div>
+    </div>`);
+    root.appendChild(sum);
+    root.appendChild(elc(`<div class="note" style="margin-top:10px;font-size:12px">Counted <b>${live.baseline.toLocaleString()} units</b> at your ${dateTxt} fill. Drops with every sale; recount (edit any item or re-import) to reset the baseline.</div>`));
+  } else {
+    sum = elc(`<div class="cl-sum">
+      <div class="tile"><div class="k">Total units</div><div class="v">${totUnits.toLocaleString()}</div><div class="d" style="color:var(--muted)">across all folders</div></div>
+      <div class="tile"><div class="k">Total value</div><div class="v">${usd(totValue)}</div><div class="d" style="color:var(--muted)">at your unit prices</div></div>
+    </div>`);
+    root.appendChild(sum);
+  }
 
   const add = elc(`<button class="btn" style="margin-top:8px">+ Add item</button>`);
   add.onclick = ()=>openEditor(null);

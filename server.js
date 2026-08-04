@@ -355,13 +355,36 @@ async function loadCloset() {
   return doc;
 }
 
+// Default count date — the last fill/count when the 810 was taken. Any in-app
+// save updates it to that day (a fresh recount resets the baseline).
+const DEFAULT_COUNT_DATE = "2026-07-27";
+
 app.get("/api/closet", async (_req, res) => {
-  try { res.json(await loadCloset()); }
-  catch (err) { res.status(502).json({ error: "store_failed", message: err?.message || "Storage read failed." }); }
+  try {
+    const doc = await loadCloset();
+    const baseline = (doc.items || []).reduce((a, i) => a + (Number(i.qty) || 0), 0);
+    const countedAt = doc.countedAt || DEFAULT_COUNT_DATE;
+    // Live count = what you counted at the last fill, minus every unit AirVend
+    // has rung up since. Only drops between fills; resets when you recount.
+    let soldSince = 0, haveSales = false;
+    try {
+      const sales = await getSales();
+      soldSince = (sales.days || []).filter(day => day.d > countedAt).reduce((a, day) => a + (day.units || 0), 0);
+      haveSales = true;
+    } catch (e) { /* fall back to the static count if the sales feed is down */ }
+    doc.live = haveSales
+      ? { baseline, countedAt, soldSince, liveUnits: Math.max(0, baseline - soldSince) }
+      : null;
+    res.json(doc);
+  } catch (err) { res.status(502).json({ error: "store_failed", message: err?.message || "Storage read failed." }); }
 });
 app.put("/api/closet", async (req, res) => {
-  try { await setDoc(CLOSET_KEY, req.body || { items: [], hist: [] }); res.json({ ok: true }); }
-  catch (err) { res.status(502).json({ error: "store_failed", message: err?.message || "Storage write failed." }); }
+  try {
+    const doc = req.body || { items: [], hist: [] };
+    doc.countedAt = new Date().toISOString().slice(0, 10); // saving = a fresh recount → reset the baseline
+    await setDoc(CLOSET_KEY, doc);
+    res.json({ ok: true });
+  } catch (err) { res.status(502).json({ error: "store_failed", message: err?.message || "Storage write failed." }); }
 });
 
 app.post("/api/generate", async (req, res) => {
