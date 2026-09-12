@@ -36,6 +36,11 @@
     --r:18px;
     --shadow:0 1px 2px rgba(28,28,26,.04), 0 6px 18px rgba(28,28,26,.05);
     --nav-bg:rgba(255,255,255,.94);
+    /* one banner-red family (health / reminders) — tokenised so it adapts to dark */
+    --banner-bg:rgba(200,55,45,.08);
+    --banner-border:rgba(200,55,45,.18);
+    --banner-ink:#8f342c;
+    --banner-dot:#b64236;
   }
   /* ---------- dark mode: overrides every surface ---------- */
   :root[data-theme="dark"]{
@@ -51,6 +56,10 @@
     --good:#3ecf7f; --bad:#ff6b5e; --warn:#e0a83a;
     --shadow:0 1px 2px rgba(0,0,0,.35), 0 6px 20px rgba(0,0,0,.4);
     --nav-bg:rgba(24,24,29,.94);
+    --banner-bg:rgba(255,107,94,.13);
+    --banner-border:rgba(255,107,94,.30);
+    --banner-ink:#ff9d92;   /* readable light-red on dark */
+    --banner-dot:#ff6b5e;
   }
   :root[data-theme="dark"] nav button.on{color:var(--ink)}
   *{box-sizing:border-box; -webkit-tap-highlight-color:transparent}
@@ -129,7 +138,7 @@
     background:var(--surface); border-radius:var(--r); padding:18px 16px 14px;
     box-shadow:var(--shadow);
   }
-  .card + .card{margin-top:12px}
+  .card{margin-top:12px}  /* consistent gap no matter what precedes (margins collapse between adjacent cards) */
   .card .ct{font-weight:800; font-size:16px; letter-spacing:-.01em; margin:0 0 3px}
   .card .cs{color:var(--muted); font-size:12.5px; margin:0 0 14px; line-height:1.4}
 

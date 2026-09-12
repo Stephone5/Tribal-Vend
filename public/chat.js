@@ -6,7 +6,7 @@ const el = h => { const t = document.createElement("template"); t.innerHTML = h.
 const LSK = "tv_chat_v1";
 
 let msgs = [];
-let ROOT = null, injected = false;
+let ROOT = null, injected = false, sending = false;
 
 function injectStyles() {
   if (injected) return; injected = true;
@@ -34,9 +34,8 @@ function injectStyles() {
     .ch-bar{position:sticky;bottom:calc(84px + env(safe-area-inset-bottom));background:var(--plane);padding:8px 0 4px;display:flex;gap:8px;align-items:flex-end}
     .ch-bar textarea{flex:1;resize:none;background:var(--surface);border:1px solid var(--line);color:var(--ink);border-radius:14px;padding:12px 14px;font-size:16px;font-family:inherit;max-height:120px;line-height:1.4}
     .ch-send{flex:none;width:46px;height:46px;border-radius:14px;border:0;background:var(--char);color:#fff;font-size:20px;cursor:pointer}
-    .ch-send:disabled{opacity:.45}
-    .ch-sugg{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:4px}
-    .ch-sugg button{background:var(--surface);border:1px solid var(--line);color:var(--ink-2);border-radius:99px;padding:8px 12px;font-size:12.5px;font-weight:600;cursor:pointer}
+    .ch-send:disabled{opacity:.45;cursor:default}
+    .ch-msgs{padding-bottom:8px}
   </style>`));
 }
 
@@ -104,7 +103,7 @@ function paint() {
   const list = el(`<div class="ch-msgs"></div>`);
 
   if (!msgs.length) {
-    list.appendChild(el(`<div class="ch-b ch-ai">I'm running the desk. I can see both machines live, every sale, your costs, closet, and the books.\n\nAsk me anything — what to change, what's leaking money, what to buy.</div>`));
+    list.appendChild(el(`<div class="ch-b ch-ai">I'm running the desk. I can see both machines live, every sale, your costs, closet, and the books.<br><br>Ask me anything — what to change, what's leaking money, what to buy.</div>`));
   }
   msgs.forEach(m => list.appendChild(bubble(m.role, m.content)));
   wrap.appendChild(list);
@@ -120,6 +119,8 @@ function paint() {
   wrap.appendChild(bar);
   ROOT.appendChild(wrap);
   ROOT._list = list; ROOT._ta = ta; ROOT._btn = btn;
+  // If a reply is still in flight (tab was switched away and back), show it.
+  if (sending) { btn.disabled = true; list.appendChild(thinkingEl()); }
   // Open at the BOTTOM of the feed (latest message). The section just un-hid, so
   // wait for layout to settle before scrolling — double rAF + a fallback tick.
   const toBottom = () => window.scrollTo(0, document.body.scrollHeight);
@@ -127,15 +128,21 @@ function paint() {
   setTimeout(toBottom, 60);
 }
 
+function thinkingEl() {
+  return el(`<div class="ch-think"><span class="ch-dot"></span><span class="ch-dot"></span><span class="ch-dot"></span> thinking…</div>`);
+}
+
 async function send(text) {
+  if (sending) return;                 // one reply at a time — no double-sends
+  sending = true;
   const list = ROOT._list, ta = ROOT._ta, btn = ROOT._btn;
   if (!msgs.length) list.innerHTML = "";
   msgs.push({ role: "user", content: text });
+  save();                              // persist the question immediately
   list.appendChild(bubble("user", text));
   ta.value = ""; ta.style.height = "auto"; btn.disabled = true;
-  const thinking = el(`<div class="ch-think"><span class="ch-dot"></span><span class="ch-dot"></span><span class="ch-dot"></span> thinking…</div>`);
-  list.appendChild(thinking);
-  thinking.scrollIntoView({ block: "end", behavior: "smooth" });
+  list.appendChild(thinkingEl());
+  window.scrollTo(0, document.body.scrollHeight);
 
   let reply = "";
   try {
@@ -148,10 +155,18 @@ async function send(text) {
   } catch (e) {
     reply = "Couldn't reach the server. Try again in a moment.";
   }
-  thinking.remove();
+
   msgs.push({ role: "assistant", content: reply });
-  list.appendChild(bubble("assistant", reply));
   save();
-  btn.disabled = false;
-  list.lastElementChild.scrollIntoView({ block: "end", behavior: "smooth" });
+  sending = false;
+  // Only touch the DOM if this chat view is still on screen. If the tab was
+  // switched away, the reply is saved and paint() shows it on reopen — it isn't
+  // appended to a detached, invisible list (the old lost-reply bug).
+  const listNow = ROOT && ROOT._list;
+  if (listNow && listNow.isConnected) {
+    listNow.querySelectorAll(".ch-think").forEach(t => t.remove());
+    listNow.appendChild(bubble("assistant", reply));
+    if (ROOT._btn) ROOT._btn.disabled = false;
+    window.scrollTo(0, document.body.scrollHeight);
+  }
 }

@@ -342,9 +342,9 @@ function confirmResync() {
 
 // ---------- bank-feed reminder (muted red) ----------
 function bankFeedBanner() {
-  return el(`<div style="display:flex;align-items:flex-start;gap:10px;background:rgba(200,55,45,.08);border:1px solid rgba(200,55,45,.18);border-radius:12px;padding:11px 13px;margin-bottom:2px">
-    <span style="width:7px;height:7px;border-radius:50%;background:#b64236;flex:none;margin-top:5px"></span>
-    <span style="flex:1;font-size:12.5px;color:#8f342c;font-weight:600;line-height:1.4">When you open the new bank in Oklahoma, wire its data into this app — Plaid, emailed statements, or a periodic CSV. Until then these numbers only move as fast as the data you feed in.</span></div>`);
+  return el(`<div style="display:flex;align-items:flex-start;gap:10px;background:var(--banner-bg);border:1px solid var(--banner-border);border-radius:12px;padding:11px 13px;margin-bottom:2px">
+    <span style="width:7px;height:7px;border-radius:50%;background:var(--banner-dot);flex:none;margin-top:5px"></span>
+    <span style="flex:1;font-size:12.5px;color:var(--banner-ink);font-weight:600;line-height:1.4">When you open the new bank in Oklahoma, wire its data into this app — Plaid, emailed statements, or a periodic CSV. Until then these numbers only move as fast as the data you feed in.</span></div>`);
 }
 
 // ---------- P&L with a period selector ----------
@@ -564,10 +564,10 @@ function healthBanners(root, d) {
   const broke = issues.find(i => i.code === "machine_unreachable" || i.code === "no_sales");
 
   const banner = (text, onClick) => {
-    const b = el(`<div style="display:flex;align-items:center;gap:10px;background:rgba(200,55,45,.08);border:1px solid rgba(200,55,45,.18);border-radius:12px;padding:11px 13px;margin-top:10px;cursor:${onClick ? "pointer" : "default"}">
-      <span style="width:7px;height:7px;border-radius:50%;background:#b64236;flex:none"></span>
-      <span style="flex:1;font-size:13px;color:#8f342c;font-weight:600;line-height:1.35">${text}</span>
-      ${onClick ? `<span style="color:#b64236;font-size:17px">›</span>` : ""}</div>`);
+    const b = el(`<div style="display:flex;align-items:center;gap:10px;background:var(--banner-bg);border:1px solid var(--banner-border);border-radius:12px;padding:11px 13px;margin-top:10px;cursor:${onClick ? "pointer" : "default"}">
+      <span style="width:7px;height:7px;border-radius:50%;background:var(--banner-dot);flex:none"></span>
+      <span style="flex:1;font-size:13px;color:var(--banner-ink);font-weight:600;line-height:1.35">${text}</span>
+      ${onClick ? `<span style="color:var(--banner-dot);font-size:17px">›</span>` : ""}</div>`);
     if (onClick) b.onclick = onClick;
     wrap.appendChild(b);
   };
