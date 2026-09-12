@@ -19,7 +19,24 @@ import { SLOTS, WINDOW_LABEL } from "./finance.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
-app.use(express.json({ limit: "8mb" }));
+app.set("trust proxy", 1); // Render sits in front — needed to read the real client IP
+app.use(express.json({ limit: "8mb" })); // 8mb: closet items carry photo data-URIs
+
+// Security headers on every response. The app is fully self-hosted (no CDNs),
+// so a tight CSP is safe: inline <script>/<style> are allowed (the app uses
+// them), but externally-injected script, framing (clickjacking), and MIME
+// sniffing are blocked.
+app.use((_req, res, next) => {
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("X-Frame-Options", "DENY");
+  res.setHeader("Referrer-Policy", "no-referrer");
+  res.setHeader("Permissions-Policy", "geolocation=(), microphone=(), camera=()");
+  res.setHeader("Content-Security-Policy",
+    "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; " +
+    "script-src 'self' 'unsafe-inline'; connect-src 'self'; base-uri 'none'; " +
+    "form-action 'self'; frame-ancestors 'none'; object-src 'none'");
+  next();
+});
 
 app.get("/api/health", (_req, res) => {
   res.json({
@@ -31,16 +48,48 @@ app.get("/api/health", (_req, res) => {
   });
 });
 
-// Passcode gate. Everything under /api (except /api/health) requires the
-// X-Passcode header to match APP_PASSCODE. If APP_PASSCODE isn't set, the app
-// runs open (fine for local dev; set it in production).
+// A simple per-IP rate limiter (in-memory; resets on restart).
+const rlBuckets = new Map();
+function rateLimit(max, windowMs) {
+  return (req, res, next) => {
+    const ip = req.ip || "?", now = Date.now();
+    const hits = (rlBuckets.get(ip) || []).filter(t => now - t < windowMs);
+    if (hits.length >= max) return res.status(429).json({ error: "rate_limited", message: "Too many requests — give it a moment." });
+    hits.push(now); rlBuckets.set(ip, hits);
+    next();
+  };
+}
+
+// Passcode gate + brute-force lockout. Everything under /api (except health)
+// needs the X-Passcode header to match APP_PASSCODE. After too many wrong codes
+// from one IP, that IP is blocked for a cooldown so a short code can't be ground
+// down. If APP_PASSCODE isn't set, the app runs open (local dev only).
+const pcFails = new Map(); // ip -> { count, until }
+const PC_MAX = 10, PC_WINDOW = 15 * 60 * 1000;
 app.use((req, res, next) => {
   if (!req.path.startsWith("/api/") || req.path === "/api/health") return next();
   const pass = process.env.APP_PASSCODE;
   if (!pass) return next();
-  if ((req.get("X-Passcode") || "") === pass) return next();
+  const ip = req.ip || "?";
+  const rec = pcFails.get(ip);
+  if (rec && rec.until > Date.now()) {
+    return res.status(429).json({ error: "locked_out", message: "Too many wrong passcodes — locked for a few minutes." });
+  }
+  if ((req.get("X-Passcode") || "") === pass) { pcFails.delete(ip); return next(); }
+  // Wrong code: keep accumulating; only reset the counter if a PRIOR lock has
+  // since expired (until>0 and past). A never-locked record (until=0) keeps its count.
+  let r;
+  if (!rec) r = { count: 0, until: 0 };
+  else if (rec.until && rec.until <= Date.now()) r = { count: 0, until: 0 };
+  else r = rec;
+  r.count++;
+  if (r.count >= PC_MAX) { r.until = Date.now() + PC_WINDOW; r.count = 0; }
+  pcFails.set(ip, r);
   res.status(401).json({ error: "unauthorized", message: "Locked." });
 });
+
+// The two machines this account owns — AirVend writes are whitelisted to these.
+const KNOWN_MACHINES = new Set(["69157", "69180"]);
 
 // Financial data — behind the passcode (never in the public app code).
 app.get("/api/finance", (_req, res) => {
@@ -315,7 +364,7 @@ app.put("/api/costs", async (req, res) => {
 });
 
 // ---- Ask: talk to the brain with the whole business in context ----
-app.post("/api/ask", async (req, res) => {
+app.post("/api/ask", rateLimit(20, 60 * 1000), async (req, res) => {
   if (!process.env.ANTHROPIC_API_KEY) {
     return res.status(503).json({ error: "no_key", message: "The brain isn't connected — no API key on the server." });
   }
@@ -387,7 +436,7 @@ app.put("/api/closet", async (req, res) => {
   } catch (err) { res.status(502).json({ error: "store_failed", message: err?.message || "Storage write failed." }); }
 });
 
-app.post("/api/generate", async (req, res) => {
+app.post("/api/generate", rateLimit(20, 60 * 1000), async (req, res) => {
   if (!process.env.ANTHROPIC_API_KEY) {
     return res.status(503).json({
       error: "no_key",
@@ -420,7 +469,7 @@ function gapsToMissing(gaps) {
 // Preview (dry run) — logs in and reads the live form, changes NOTHING, returns the from→to plan.
 app.post("/api/airvend/preview", async (req, res) => {
   const { machineId, gaps } = req.body || {};
-  if (!machineId) return res.status(400).json({ error: "bad_request", message: "No machine specified." });
+  if (!KNOWN_MACHINES.has(String(machineId))) return res.status(400).json({ error: "bad_request", message: "Unknown machine." });
   try {
     const result = await writeOnHand(machineId, gapsToMissing(gaps), { dryRun: true });
     res.json(result);
@@ -431,9 +480,9 @@ app.post("/api/airvend/preview", async (req, res) => {
 });
 
 // Write (real) — actually posts the counts back to AirVend. Only fires on explicit confirm.
-app.post("/api/airvend/write", async (req, res) => {
+app.post("/api/airvend/write", rateLimit(20, 60 * 1000), async (req, res) => {
   const { machineId, gaps } = req.body || {};
-  if (!machineId) return res.status(400).json({ error: "bad_request", message: "No machine specified." });
+  if (!KNOWN_MACHINES.has(String(machineId))) return res.status(400).json({ error: "bad_request", message: "Unknown machine." });
   try {
     const result = await writeOnHand(machineId, gapsToMissing(gaps), { dryRun: false });
     res.json(result);
