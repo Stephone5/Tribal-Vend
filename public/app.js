@@ -220,7 +220,7 @@ async function confirmWrite(m, gaps, out, btn){
   try{ res=await (await apiFetch("/api/airvend/write",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({machineId:m.id, gaps})})).json(); }
   catch(e){ btn.disabled=false; btn.textContent="Confirm — write to AirVend"; out.appendChild(el(`<div class="note bad">Couldn't reach AirVend. Nothing changed.</div>`)); return; }
   if(res.error || res.dryRun){ btn.disabled=false; btn.textContent="Confirm — write to AirVend"; out.appendChild(el(`<div class="note bad">${res.message||"Write failed — nothing changed."}</div>`)); return; }
-  out.innerHTML=""; out.appendChild(el(`<div class="note good"><b>Done — AirVend updated.</b> On-hand set for ${res.wrote} slots on ${m.name}. Open AirVend to confirm it took, then hit Refresh here.</div>`));
+  out.innerHTML=""; out.appendChild(el(`<div class="note good"><b>Saved and checked.</b> I read AirVend back after writing — all ${res.wrote} slots on ${m.name} now show the counts you entered. Refill date set to ${esc(res.refillDate||"now")}. Hit Refresh here to update the list.</div>`));
   LIVE=null;
 }
 

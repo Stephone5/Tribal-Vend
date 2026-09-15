@@ -158,6 +158,10 @@ export async function writeOnHand(machineId, missingBySlot = {}, { dryRun = true
 
   const payload = { ...fields };
   payload["UsingQuantityAdded"] = "False"; // on-hand mode: the Quantity we send IS the current count
+  // The refill happens now. AirVend rejects a refill date earlier than its
+  // MinimumRefillDate — echoing the old date back is what made writes fail.
+  const refillDate = airvendNow();
+  payload["RefillDate"] = refillDate;
 
   const plan = [];
   for (const s of slots) {
@@ -177,7 +181,35 @@ export async function writeOnHand(machineId, missingBySlot = {}, { dryRun = true
     body,
     redirect: "manual"
   });
-  const ok = res.status === 302 || res.status === 303 || res.status === 200;
-  if (!ok) throw new Error(`AirVend rejected the inventory update (HTTP ${res.status}). Nothing was changed on your end.`);
-  return { dryRun: false, machineId, wrote: plan.length, plan };
+  // A saved form redirects. A 200 means AirVend handed the form back — usually
+  // with a validation error — so it did NOT save. Never report that as success.
+  if (res.status === 200) {
+    const $ = cheerio.load(await res.text());
+    const msgs = $(".validation-summary-errors li, .field-validation-error, .k-invalid-msg, .alert-danger")
+      .map((_, e) => $(e).text().trim()).get().filter(Boolean);
+    throw new Error(`AirVend did not save the update${msgs.length ? `: ${[...new Set(msgs)].join(" · ")}` : " (it returned the form without saving)"}.`);
+  }
+  if (!(res.status === 302 || res.status === 303)) {
+    throw new Error(`AirVend rejected the inventory update (HTTP ${res.status}). Nothing was saved.`);
+  }
+
+  // Proof, not trust: read AirVend back and check every slot actually took.
+  const after = await getForm(cookie, machineId);
+  const nowBySlot = Object.fromEntries(after.slots.map(s => [s.key, s.onHand]));
+  const mismatched = plan.filter(p => Number(nowBySlot[p.slot]) !== Number(p.to))
+    .map(p => ({ ...p, airvendNow: nowBySlot[p.slot] }));
+  if (mismatched.length) {
+    const list = mismatched.slice(0, 8).map(m => `slot ${m.slot} is ${m.airvendNow}, expected ${m.to}`).join("; ");
+    throw new Error(`AirVend accepted the form but ${mismatched.length} slot${mismatched.length === 1 ? "" : "s"} didn't update: ${list}.`);
+  }
+  return { dryRun: false, machineId, wrote: plan.length, verified: true, refillDate, plan };
+}
+
+// Current time in AirVend's format ("M/d/yyyy h:mm AM"), Central time — the machines are in Oklahoma.
+function airvendNow() {
+  const p = Object.fromEntries(new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Chicago", year: "numeric", month: "numeric", day: "numeric",
+    hour: "numeric", minute: "2-digit", hour12: true
+  }).formatToParts(new Date()).map(x => [x.type, x.value]));
+  return `${p.month}/${p.day}/${p.year} ${p.hour}:${p.minute} ${p.dayPeriod.toUpperCase()}`;
 }
