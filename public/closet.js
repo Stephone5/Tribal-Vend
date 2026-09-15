@@ -19,34 +19,55 @@ let STATE = { items: [], hist: [] };
 let saveTimer = null;
 
 const DIRTYK = "tv_closet_dirty";
-let DIRTY = (()=>{ try { return localStorage.getItem(DIRTYK)==="1"; } catch { return false; } })();
+const SAVEDK = "tv_closet_saved";
+// SAVED = the inventory exactly as the server last had it. Unsaved = any count differs from it.
+let SAVED = (()=>{ try { return JSON.parse(localStorage.getItem(SAVEDK)); } catch { return null; } })();
+let DIRTY = false;
+const qtyKey = d => JSON.stringify((d && d.items || []).map(i => [i.id, Number(i.qty)||0]));
+function computeDirty(){ DIRTY = !!(SAVED && qtyKey(STATE) !== qtyKey(SAVED)); return DIRTY; }
+function setSaved(d){
+  SAVED = JSON.parse(JSON.stringify(d));
+  try { localStorage.setItem(SAVEDK, JSON.stringify(SAVED)); localStorage.removeItem(DIRTYK); } catch(e){}
+}
 
 function load(){ return STATE; }
 // Count edits are held on this phone until you tap Save. Nothing half-saves.
 function stage(d){
-  STATE = d; DIRTY = true;
-  try { localStorage.setItem(LSK, JSON.stringify(STATE)); localStorage.setItem(DIRTYK,"1"); } catch(e){}
+  STATE = d;
+  // Back to exactly what's saved: drop the in-between history too, nothing to save.
+  if (!computeDirty() && SAVED) STATE = JSON.parse(JSON.stringify(SAVED));
+  STATE.__unsaved = DIRTY;
+  try { localStorage.setItem(LSK, JSON.stringify(STATE)); } catch(e){}
   paintSaveBar();
+}
+function cancelEdits(){
+  if (!SAVED) return;
+  STATE = JSON.parse(JSON.stringify(SAVED)); DIRTY = false;
+  try { localStorage.setItem(LSK, JSON.stringify(STATE)); } catch(e){}
+  repaintInPlace();
 }
 async function saveNow(){
   const bar = document.getElementById("cl-savebar");
-  const btn = bar && bar.querySelector("button");
+  const btn = bar && bar.querySelector(".save");
   const msg = bar && bar.querySelector(".m");
+  const cancel = bar && bar.querySelector(".cancel"); if (cancel) cancel.hidden = true;
   if (btn){ btn.disabled = true; btn.textContent = "Saving…"; }
   try {
+    delete STATE.__unsaved;
     const r = await apiFetch("/api/closet", { method:"PUT", headers:{"Content-Type":"application/json"}, body: JSON.stringify(STATE) });
     if (!r.ok) throw new Error("HTTP " + r.status);
-    DIRTY = false; try { localStorage.removeItem(DIRTYK); } catch(e){}
-    await pull(); paint();
+    delete STATE.__unsaved; setSaved(STATE); DIRTY = false;
+    await pull(); repaintInPlace();
     const b2 = document.getElementById("cl-savebar");
     if (b2){
       b2.hidden = false; b2.classList.add("ok");
       b2.querySelector(".m").textContent = "Saved. This is your new count.";
-      b2.querySelector("button").hidden = true;
-      setTimeout(()=>{ if(!DIRTY) paintSaveBar(); }, 2500);
+      b2.querySelector(".save").hidden = true; b2.querySelector(".cancel").hidden = true;
+      setTimeout(()=>{ if(!DIRTY) paintSaveBar(); }, 2000);
     }
   } catch(e) {
     if (btn){ btn.disabled = false; btn.textContent = "Try again"; }
+    if (cancel) cancel.hidden = false;
     if (msg) msg.textContent = "Didn't save. Couldn't reach the server. Your counts are still on this phone.";
     if (bar) bar.classList.add("err");
   }
@@ -54,17 +75,18 @@ async function saveNow(){
 function paintSaveBar(){
   let bar = document.getElementById("cl-savebar");
   if (!bar) {
-    bar = elc(`<div id="cl-savebar" hidden><div class="m"></div><button>Save</button></div>`);
-    bar.querySelector("button").onclick = saveNow;
+    bar = elc(`<div id="cl-savebar" hidden><div class="m"></div><button class="cancel">Cancel</button><button class="save">Save</button></div>`);
+    bar.querySelector(".save").onclick = saveNow;
+    bar.querySelector(".cancel").onclick = cancelEdits;
     document.body.appendChild(bar);
   }
   const onInventory = ROOT && !ROOT.hidden;
-  bar.hidden = !onInventory;
+  computeDirty();
+  bar.hidden = !(onInventory && DIRTY);
   bar.classList.remove("err","ok");
-  const btn = bar.querySelector("button"); btn.hidden = false;
-  btn.disabled = !DIRTY; btn.textContent = DIRTY ? "Save" : "Saved";
-  bar.classList.toggle("clean", !DIRTY);
-  bar.querySelector(".m").textContent = DIRTY ? "Unsaved changes" : "All counts saved";
+  const save = bar.querySelector(".save"), cancel = bar.querySelector(".cancel");
+  save.hidden = false; cancel.hidden = false; save.disabled = false; save.textContent = "Save";
+  bar.querySelector(".m").textContent = "Unsaved changes";
 }
 export function closetTabHidden(){
   const bar = document.getElementById("cl-savebar");
@@ -76,7 +98,10 @@ function save(d){
   try { localStorage.setItem(LSK, JSON.stringify(STATE)); } catch(e){}
   clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
-    apiFetch("/api/closet", { method:"PUT", headers:{"Content-Type":"application/json"}, body: JSON.stringify(STATE) }).catch(()=>{});
+    // Item add/edit/delete and backup import save straight away (they have their own Save).
+    apiFetch("/api/closet", { method:"PUT", headers:{"Content-Type":"application/json"}, body: JSON.stringify(STATE) })
+      .then(r => { if (r.ok) { setSaved(STATE); paintSaveBar(); } else alert("That change didn't save to the server. Try again."); })
+      .catch(() => alert("That change didn't save. No connection to the server."));
   }, 600);
 }
 async function pull(){
@@ -86,8 +111,9 @@ async function pull(){
     const r = await apiFetch("/api/closet");
     if (r.ok) {
       const server = await r.json();
-      // Unsaved counts on this phone win until you tap Save.
-      if (DIRTY && cached && cached.items) { cached.live = server.live; cached.countedAt = server.countedAt; STATE = cached; return; }
+      setSaved(server);
+      // Unsaved counts on this phone win until you tap Save or Cancel.
+      if (cached && cached.__unsaved && cached.items) { cached.live = server.live; cached.countedAt = server.countedAt; STATE = cached; computeDirty(); return; }
       // Safety: if the server came back empty but this device has data, keep the
       // device's copy and push it back up — a server hiccup can't erase your closet.
       if ((!server.items || !server.items.length) && cached && cached.items && cached.items.length) {
@@ -131,7 +157,7 @@ function injectStyles(){
     #cl-savebar .m{flex:1;font-size:14px;font-weight:700;line-height:1.3}
     #cl-savebar button{flex:none;height:44px;padding:0 22px;border-radius:12px;border:0;background:var(--gold);color:#282828;font-size:16px;font-weight:800;font-family:inherit;cursor:pointer}
     #cl-savebar button[hidden]{display:none}
-    #cl-savebar button:disabled{background:rgba(255,255,255,.14);color:rgba(255,255,255,.7);cursor:default}
+    #cl-savebar .cancel{background:transparent;color:#fff;border:1.5px solid rgba(255,255,255,.35);padding:0 16px}
     #closet{padding-bottom:76px}
     .cl-log{margin-top:12px;padding:6px 14px}
     .cl-log summary{cursor:pointer;font-weight:800;font-size:15px;padding:10px 2px;list-style:none}
@@ -196,6 +222,8 @@ function toThumb(file){
 }
 
 let ROOT=null;
+const OPEN_FOLDERS = new Set();   // folders stay open when the page redraws
+function repaintInPlace(){ const y = window.scrollY; paint(); window.scrollTo(0, y); }
 export async function renderCloset(rootEl){
   injectStyles();
   ROOT = rootEl;
@@ -261,10 +289,11 @@ function paint(){
       <div class="cl-finfo"><div class="fn">${folder}</div><div class="fs">${items.length} item${items.length===1?"":"s"} · ${fu} units · ${usd(fv)}${lowCount?` · <span class="cl-flow">${lowCount} low</span>`:""}</div></div>
       <span class="cl-chev">›</span>
     </div>`);
-    const list = elc(`<div class="cl-items" hidden></div>`);
+    const list = elc(`<div class="cl-items" ${OPEN_FOLDERS.has(folder)?"":"hidden"}></div>`);
+    if (OPEN_FOLDERS.has(folder)) head.querySelector(".cl-chev").classList.add("open");
     items.forEach(it=>list.appendChild(itemRow(it)));
     if(!items.length) list.appendChild(elc(`<div class="empty" style="padding:16px 4px">No items in ${folder} yet.</div>`));
-    head.onclick = ()=>{ const open=list.hidden; list.hidden=!open; head.querySelector(".cl-chev").classList.toggle("open",open); };
+    head.onclick = ()=>{ const open=list.hidden; list.hidden=!open; head.querySelector(".cl-chev").classList.toggle("open",open); open?OPEN_FOLDERS.add(folder):OPEN_FOLDERS.delete(folder); };
     card.appendChild(head); card.appendChild(list);
     root.appendChild(card);
   }
