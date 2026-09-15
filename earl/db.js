@@ -10,7 +10,13 @@ let client = null;
 export function earlDbReady() { return !!(process.env.EARL_SUPABASE_URL && process.env.EARL_SUPABASE_SERVICE_KEY); }
 export function getClient() {
   if (!earlDbReady()) return null;
-  if (!client) client = createClient(process.env.EARL_SUPABASE_URL, process.env.EARL_SUPABASE_SERVICE_KEY, { auth: { persistSession: false } });
+  // Accept the URL however it was pasted (with /rest/v1/, a trailing slash,
+  // or spaces): the client needs just https://<project>.supabase.co.
+  if (!client) {
+    let url = String(process.env.EARL_SUPABASE_URL).trim();
+    try { url = new URL(url).origin; } catch (e) {}
+    client = createClient(url, String(process.env.EARL_SUPABASE_SERVICE_KEY).trim(), { auth: { persistSession: false } });
+  }
   return client;
 }
 function must() {
