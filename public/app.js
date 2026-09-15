@@ -179,7 +179,7 @@ function buildUpdatePanel(m, body){
   const rows=el(`<div class="rows" style="margin-top:10px"></div>`);
   (m.slots||[]).slice().sort((a,b)=>(+b.slot)-(+a.slot)).forEach(s=>{
     const par=Number(s.max)||0;
-    rows.appendChild(el(`<div class="row"><div class="nm">${esc(cleanItem(s.product))}<div class="mt">slot ${s.slot} · par ${par} · now ${s.onHand}</div></div><input class="uq" inputmode="numeric" value="${par}" data-slot="${s.slot}" data-par="${par}" style="width:56px;height:40px;text-align:center;font-size:17px;font-weight:800;background:var(--surface-2);border:1.5px solid var(--line);border-radius:11px;color:var(--ink)"></div>`));
+    rows.appendChild(el(`<div class="row"><div class="nm">${esc(cleanItem(s.product))}<div class="mt">slot ${s.slot} · par ${par} · now ${s.onHand}</div></div><input class="uq" inputmode="numeric" pattern="[0-9]*" enterkeyhint="next" value="${par}" data-slot="${s.slot}" data-par="${par}" style="width:56px;height:40px;text-align:center;font-size:17px;font-weight:800;background:var(--surface-2);border:1.5px solid var(--line);border-radius:11px;color:var(--ink)"></div>`));
   });
   body.appendChild(rows);
   const prev=el(`<button class="btn ghost" style="margin-top:12px">Preview what changes →</button>`);
@@ -322,5 +322,8 @@ document.addEventListener("focusout", () => setTimeout(() => {
   const a = document.activeElement;
   if (!(a && a.matches && a.matches("input, textarea"))) document.body.classList.remove("kbd");
 }, 60));
-// Restock count boxes: tapping selects the number so typing replaces it.
-document.addEventListener("focusin", e => { if (e.target.classList && e.target.classList.contains("uq")) setTimeout(() => e.target.select(), 0); });
+// Count boxes: tapping selects the number so typing replaces it.
+document.addEventListener("focusin", e => {
+  const t = e.target;
+  if (t.matches && t.matches("input.uq, #closet input.q")) setTimeout(() => t.select(), 0);
+});

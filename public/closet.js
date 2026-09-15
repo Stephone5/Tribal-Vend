@@ -43,7 +43,7 @@ async function saveNow(){
       b2.hidden = false; b2.classList.add("ok");
       b2.querySelector(".m").textContent = "Saved. This is your new count.";
       b2.querySelector("button").hidden = true;
-      setTimeout(()=>{ if(!DIRTY){ b2.hidden = true; b2.classList.remove("ok"); b2.querySelector("button").hidden = false; } }, 2500);
+      setTimeout(()=>{ if(!DIRTY) paintSaveBar(); }, 2500);
     }
   } catch(e) {
     if (btn){ btn.disabled = false; btn.textContent = "Try again"; }
@@ -59,10 +59,12 @@ function paintSaveBar(){
     document.body.appendChild(bar);
   }
   const onInventory = ROOT && !ROOT.hidden;
-  bar.hidden = !(DIRTY && onInventory);
+  bar.hidden = !onInventory;
   bar.classList.remove("err","ok");
-  const btn = bar.querySelector("button"); btn.hidden = false; btn.disabled = false; btn.textContent = "Save";
-  bar.querySelector(".m").textContent = "Unsaved changes";
+  const btn = bar.querySelector("button"); btn.hidden = false;
+  btn.disabled = !DIRTY; btn.textContent = DIRTY ? "Save" : "Saved";
+  bar.classList.toggle("clean", !DIRTY);
+  bar.querySelector(".m").textContent = DIRTY ? "Unsaved changes" : "All counts saved";
 }
 export function closetTabHidden(){
   const bar = document.getElementById("cl-savebar");
@@ -129,9 +131,18 @@ function injectStyles(){
     #cl-savebar .m{flex:1;font-size:14px;font-weight:700;line-height:1.3}
     #cl-savebar button{flex:none;height:44px;padding:0 22px;border-radius:12px;border:0;background:var(--gold);color:#282828;font-size:16px;font-weight:800;font-family:inherit;cursor:pointer}
     #cl-savebar button[hidden]{display:none}
+    #cl-savebar button:disabled{background:rgba(255,255,255,.14);color:rgba(255,255,255,.7);cursor:default}
+    #closet{padding-bottom:76px}
+    .cl-log{margin-top:12px;padding:6px 14px}
+    .cl-log summary{cursor:pointer;font-weight:800;font-size:15px;padding:10px 2px;list-style:none}
+    .cl-log summary::-webkit-details-marker{display:none}
+    .cl-log .h{display:grid;grid-template-columns:auto 1fr auto;gap:10px;font-size:13px;padding:8px 2px;border-top:1px solid var(--line);font-variant-numeric:tabular-nums}
+    .cl-log .h .t{color:var(--muted);white-space:nowrap}
+    .cl-log .h .n{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .cl-log .h .c{font-weight:800;white-space:nowrap}
     #cl-savebar.err{background:var(--bad)}
     #cl-savebar.ok{background:var(--good)}
-    body.kbd #cl-savebar{bottom:12px}
+
     .cl-modal{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:50;display:flex;align-items:flex-end;justify-content:center}
     .cl-sheet{background:var(--surface);width:100%;max-width:520px;border-radius:20px 20px 0 0;padding:16px 16px calc(20px + env(safe-area-inset-bottom));max-height:92vh;overflow:auto}
     .cl-sheet h3{margin:2px 2px 12px;font-size:17px}
@@ -258,6 +269,17 @@ function paint(){
     root.appendChild(card);
   }
 
+  // Every count change, newest first: when, what, by how much, and what it became.
+  const hist = (d.hist || []);
+  const log = elc(`<details class="card cl-log"><summary>Change history · ${hist.length} change${hist.length===1?"":"s"} ›</summary></details>`);
+  if (!hist.length) log.appendChild(elc(`<div class="empty" style="padding:12px 2px">No changes logged yet.</div>`));
+  hist.forEach(h => {
+    const when = new Date(h.t);
+    const t = when.toLocaleDateString([], {month:"short", day:"numeric"}) + " " + when.toLocaleTimeString([], {hour:"numeric", minute:"2-digit"});
+    log.appendChild(elc(`<div class="h"><span class="t">${t}</span><span class="n">${escapeHtml(h.name||"")}</span><span class="c">${h.delta>0?"+":""}${h.delta} → ${h.qty}</span></div>`));
+  });
+  root.appendChild(log);
+
   const tools = elc(`<div class="cl-tools"><button id="cl-exp">Export backup</button><button id="cl-imp">Import backup</button></div>`);
   root.appendChild(tools);
   tools.querySelector("#cl-exp").onclick = exportBackup;
@@ -279,14 +301,14 @@ function itemRow(it){
       <button data-a="plus">+</button>
     </div>
   </div>`);
-  const setQty = (next)=>{
+  const setQty = (next, log = true)=>{
     const d = load();
     const item = d.items.find(x=>x.id===it.id); if(!item) return;
     next = Math.max(0, Math.floor(Number(next)||0));
     const delta = next - (Number(item.qty)||0);
     if (!delta) return;
     item.qty = next;
-    logHist(d, item, delta);
+    if (log) logHist(d, item, delta);
     stage(d);
     it.qty = item.qty;
     const qin = row.querySelector(".q"); if (document.activeElement !== qin) qin.value = item.qty;
@@ -299,10 +321,19 @@ function itemRow(it){
   const qi = row.querySelector(".q");
   row.querySelector('[data-a="minus"]').onclick = ()=>setQty((Number(it.qty)||0) - 1);
   row.querySelector('[data-a="plus"]').onclick = ()=>setQty((Number(it.qty)||0) + 1);
-  qi.onfocus = ()=>setTimeout(()=>qi.select(), 0);   // tapping selects the number so typing replaces it
-  qi.oninput = ()=>{ qi.value = qi.value.replace(/[^0-9]/g,""); if (qi.value !== "") setQty(qi.value); };
-  qi.onblur = ()=>{ if (qi.value === "") qi.value = Number(it.qty)||0; };
+  // Update live while typing; log one history entry when you leave the box.
+  qi.onfocus = ()=>{ qi.dataset.was = qi.value; };
+  qi.oninput = ()=>{ qi.value = qi.value.replace(/[^0-9]/g,""); if (qi.value !== "") setQty(qi.value, false); };
+  qi.onblur = ()=>{ if (qi.value === "") { qi.value = qi.dataset.was || "0"; setQty(qi.value, false); } };
   qi.onkeydown = e=>{ if (e.key === "Enter") qi.blur(); };
+  qi.onchange = ()=>{
+    if (qi.value === "") return;
+    const was = Number(qi.dataset.was); const now = Number(qi.value);
+    if (!isNaN(was) && !isNaN(now) && now !== was) {
+      const d = load(); const item = d.items.find(x=>x.id===it.id);
+      if (item) { logHist(d, item, now - was); stage(d); }
+    }
+  };
   row.querySelector(".cl-mid").onclick = ()=>openEditor(it);
   row.querySelector(".cl-thumb").onclick = ()=>openEditor(it);
   return row;
