@@ -123,12 +123,14 @@ async function renderRuns(){
     // goes. Fixes the Bring-vs-By-slot split and the "listed twice" problem.
     const groups={};
     need.forEach(s=>{ const g=packageOf(s.raw); if(!groups[g.key])groups[g.key]={label:g.label,total:0,slots:[]}; groups[g.key].total+=s.need; groups[g.key].slots.push(s); });
-    const glist=Object.values(groups).sort((a,b)=>b.total-a.total);
+    // Spiral order, highest slot number first (walk the machine top-down).
+    const topSlot=g=>Math.max(...g.slots.map(s=>+s.slot));
+    const glist=Object.values(groups).sort((a,b)=>topSlot(b)-topSlot(a));
     const fullCount=slots.length-need.length;
     const c=el(`<div class="card buy"><div class="ct">Refill list · ${m.name}</div><div class="cs">${totalUnits} units to buy across ${need.length} slots · ${fullCount} already at par</div></div>`);
     const rows=el(`<div class="rows"></div>`);
     glist.forEach(g=>{
-      const detail=g.slots.slice().sort((a,b)=>(+a.slot)-(+b.slot)).map(s=>`#${s.slot} ${s.onHand}/${s.par} (+${s.need})`).join(" · ");
+      const detail=g.slots.slice().sort((a,b)=>(+b.slot)-(+a.slot)).map(s=>`#${s.slot} ${s.onHand}/${s.par} (+${s.need})`).join(" · ");
       rows.appendChild(el(`<div class="row"><div class="nm">${esc(g.label)}<div class="mt">${detail}</div></div><div class="val">+${g.total}</div></div>`));
     });
     c.appendChild(rows); out.appendChild(c);
@@ -175,7 +177,7 @@ async function buildBuyListFromNeeds(machine, need, out, gen){
 function buildUpdatePanel(m, body){
   body.appendChild(el(`<div class="note warn">Sets AirVend's <b>on-hand</b> to what you actually filled — the same as Edit → <b>Update on hand</b> in AirVend (not "quantity added"). Every slot defaults to <b>par</b>; change only the ones you filled short. Nothing is written until you preview and confirm.</div>`));
   const rows=el(`<div class="rows" style="margin-top:10px"></div>`);
-  (m.slots||[]).slice().sort((a,b)=>(+a.slot)-(+b.slot)).forEach(s=>{
+  (m.slots||[]).slice().sort((a,b)=>(+b.slot)-(+a.slot)).forEach(s=>{
     const par=Number(s.max)||0;
     rows.appendChild(el(`<div class="row"><div class="nm">${esc(cleanItem(s.product))}<div class="mt">slot ${s.slot} · par ${par} · now ${s.onHand}</div></div><input class="uq" inputmode="numeric" value="${par}" data-slot="${s.slot}" data-par="${par}" style="width:56px;height:40px;text-align:center;font-size:17px;font-weight:800;background:var(--surface-2);border:1.5px solid var(--line);border-radius:11px;color:var(--ink)"></div>`));
   });
