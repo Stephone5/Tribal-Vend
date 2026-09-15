@@ -6,7 +6,7 @@ import { icon, setTabSub, confirmDialog, snackbar, sheet, pullToRefresh } from "
 
 const el = h => { const t = document.createElement("template"); t.innerHTML = h.trim(); return t.content.firstChild; };
 
-let msgs = [], loaded = false, loadError = null, preNote = null;
+let msgs = [], loaded = false, loadError = null, preNote = null, setupInfo = null;
 let ROOT = null, injected = false, sending = false;
 
 function injectStyles() {
@@ -98,6 +98,7 @@ async function loadHistory() {
     msgs = b.messages || [];
     preNote = b.preConversation || null;
     loadError = null;
+    try { const sr = await apiFetch("/api/earl/interview/state"); if (sr.ok) setupInfo = await sr.json(); } catch (e) {}
   } catch (e) {
     loadError = e.message || "Couldn't load your conversation with Earl.";
   }
@@ -114,10 +115,11 @@ export async function renderChat(rootEl) {
 
 function paint(loading) {
   ROOT.innerHTML = "";
-  setTabSub("chat", "Earl · knows your live numbers");
+  setTabSub("chat", "");
   const wrap = el(`<div class="ch-wrap"></div>`);
-  const top = el(`<div class="ch-top"><button class="btn text inline">${icon("check")}Action steps</button></div>`);
-  top.querySelector("button").onclick = openSteps;
+  const top = el(`<div class="ch-top"><button class="btn text inline" data-setup>${icon("info")}Setup${setupInfo && !setupInfo.done ? ` ${setupInfo.progress.answered}/${setupInfo.progress.total}` : ""}</button><button class="btn text inline" data-goals>${icon("check")}Goals &amp; steps</button></div>`);
+  top.querySelector("[data-setup]").onclick = openInterview;
+  top.querySelector("[data-goals]").onclick = openGoals;
   wrap.appendChild(top);
   const list = el(`<div class="ch-msgs" role="log" aria-live="polite"></div>`);
 
@@ -127,7 +129,11 @@ function paint(loading) {
     e.querySelector("button").onclick = async () => { paint(true); await loadHistory(); paint(false); };
     list.appendChild(e);
   } else {
-    if (!msgs.length) list.appendChild(el(`<div class="ch-note">This is Earl. He can see your live sales, costs, inventory, the loan and the books, and he remembers your conversations.</div>`));
+    if (setupInfo && !setupInfo.stages.stage_1) {
+      const card = el(`<div class="ch-err" style="background:var(--secondary-container);color:var(--on-secondary-container)"><b>Start with Earl's setup questions.</b><br>The first stage takes about five minutes and tells Earl who you are and what you want from the business.<br><button class="btn filled inline">Start setup</button></div>`);
+      card.querySelector("button").onclick = openInterview;
+      list.appendChild(card);
+    }
     msgs.forEach(m => list.appendChild(bubble(m.role, m.content)));
     if (preNote && !sending) list.appendChild(el(`<div class="ch-note">Last time: ${escHtml(preNote)}</div>`));
   }
@@ -196,55 +202,129 @@ async function send(text) {
   } else if (failure) snackbar(failure);
 }
 
-// ---------- action steps (Earl saves these when you commit to something) ----------
-async function openSteps() {
-  const body = el(`<div><div class="ch-think" style="margin:16px auto"><span class="ch-dot"></span><span class="ch-dot"></span><span class="ch-dot"></span></div></div>`);
-  const sh = sheet({ title: "Action steps", sub: "What you told Earl you'd do", body, full: true });
-  let data;
-  try {
-    const r = await apiFetch("/api/earl/action-steps");
-    data = await r.json();
-    if (!r.ok) throw new Error(data.message || `HTTP ${r.status}`);
-  } catch (e) {
-    body.innerHTML = `<div class="ch-err">Couldn't load action steps: ${escHtml(e.message)}</div>`;
-    return;
-  }
+// ---------- setup interview (Earl's questions, same as the Bridge) ----------
+async function openInterview() {
+  const body = el(`<div></div>`);
+  const sh = sheet({ title: "Setup", sub: "Earl's questions about you and the business", body, full: true, onClose: () => { if (ROOT && !sending) loadHistory().then(() => paint(false)); } });
+  const post = async (url, data) => {
+    const r = await apiFetch(url, data ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) } : undefined);
+    const b = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(b.message || `HTTP ${r.status}`);
+    return b;
+  };
+  const wait = () => { body.innerHTML = `<div class="ch-think" style="margin:24px auto"><span class="ch-dot"></span><span class="ch-dot"></span><span class="ch-dot"></span></div>`; };
+  const fail = (msg, retry) => { body.innerHTML = ""; const e = el(`<div class="ch-err">${escHtml(msg)}<br><button class="btn outlined inline">Try again</button></div>`); e.querySelector("button").onclick = retry; body.appendChild(e); };
+
+  const show = (st, note) => {
+    body.innerHTML = "";
+    if (note) body.appendChild(el(`<div class="card" style="white-space:pre-wrap">${escHtml(note)}</div>`));
+    if (st.goalsReady) {
+      const g = el(`<div class="card"><b>Earl drafted your goals.</b> Review them under Goals &amp; steps.<br><button class="btn tonal inline" style="margin-top:8px">Review goals</button></div>`);
+      g.querySelector("button").onclick = () => { sh.close(); setTimeout(openGoals, 240); };
+      body.appendChild(g);
+    }
+    if (st.done) { body.appendChild(el(`<div class="empty">You've answered every setup question. Earl has the full picture.</div>`)); return; }
+    const q = st.question, isFollow = !!st.followUp;
+    body.appendChild(el(`<p class="money-s" style="margin:8px 4px">Stage ${st.stage || ""} · ${st.progress ? `${st.progress.answered} of ${st.progress.total} answered` : ""}</p>`));
+    if (st.framing) body.appendChild(el(`<div class="card" style="white-space:pre-wrap">${escHtml(st.framing)}</div>`));
+    body.appendChild(el(`<div class="ch-b ch-ai" style="max-width:100%;margin:12px 0">${escHtml(isFollow ? st.followUp : q.text)}</div>`));
+    const ta = el(`<textarea rows="5" aria-label="Your answer" style="width:100%;box-sizing:border-box;border:0;border-radius:16px;background:var(--surface-c-high);color:var(--on-surface);padding:12px 16px;font-size:16px;line-height:24px;resize:vertical"></textarea>`);
+    const go = el(`<button class="btn filled" style="margin-top:12px" disabled>Next</button>`);
+    ta.oninput = () => { go.disabled = !ta.value.trim(); };
+    go.onclick = async () => {
+      const answer = ta.value.trim(); if (!answer) return;
+      wait();
+      try {
+        const r = await post("/api/earl/interview/answer", { field: q.field, answer, isFollowUp: isFollow });
+        if (r.followUp) show({ ...st, followUp: r.followUp, framing: null, goalsReady: false });
+        else show({ ...r, question: r.question }, r.stageComplete);
+      } catch (e) { fail(e.message, () => show(st)); }
+    };
+    body.append(ta, go);
+    setTimeout(() => ta.focus(), 300);
+  };
+  const start = async () => {
+    wait();
+    try { const st = await post("/api/earl/interview/state"); show(st); }
+    catch (e) { fail(`Couldn't load the setup questions: ${e.message}`, start); }
+  };
+  start();
+}
+
+// ---------- goals & action steps (Earl saves these; you can add and edit your own) ----------
+async function openGoals() {
+  const body = el(`<div></div>`);
+  sheet({ title: "Goals & steps", sub: "What you're working toward and what you said you'd do", body, full: true });
+  const call = async (url, data, method = "POST") => {
+    const r = await apiFetch(url, data !== undefined ? { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) } : undefined);
+    const b = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(b.message || `HTTP ${r.status}`);
+    return b;
+  };
+  let goals = [], steps = [];
+  const load = async () => {
+    body.innerHTML = `<div class="ch-think" style="margin:24px auto"><span class="ch-dot"></span><span class="ch-dot"></span><span class="ch-dot"></span></div>`;
+    try {
+      const [g, s] = await Promise.all([call("/api/earl/goals"), call("/api/earl/action-steps")]);
+      goals = g.goals || [];
+      steps = [...(s.active || []), ...(s.completed || []), ...(s.did_not_happen || [])];
+      draw();
+    } catch (e) { body.innerHTML = ""; body.appendChild(el(`<div class="ch-err">Couldn't load goals and steps: ${escHtml(e.message)}</div>`)); }
+  };
+  const act = async (fn, msg) => { try { await fn(); if (msg) snackbar(msg); await load(); } catch (e) { snackbar("Couldn't save: " + e.message); } };
+
+  const addForm = (placeholder, button, onSave, extra) => {
+    const f = el(`<div style="display:flex;gap:8px;align-items:flex-end;margin:8px 0 4px;flex-wrap:wrap"></div>`);
+    const inp = el(`<textarea rows="1" placeholder="${escHtml(placeholder)}" aria-label="${escHtml(placeholder)}" style="flex:1;min-width:200px;min-height:48px;border:0;border-radius:24px;background:var(--surface-c-high);color:var(--on-surface);padding:12px 16px;font-size:16px;line-height:24px;resize:none"></textarea>`);
+    const b = el(`<button class="btn tonal" disabled>${escHtml(button)}</button>`);
+    inp.oninput = () => { b.disabled = !inp.value.trim(); inp.style.height = "auto"; inp.style.height = Math.min(140, inp.scrollHeight) + "px"; };
+    b.onclick = () => { const v = inp.value.trim(); if (v) onSave(v, extra ? extra.value : null); };
+    f.append(inp);
+    if (extra) f.append(extra);
+    f.append(b);
+    return f;
+  };
+  const stepRow = s => {
+    const done = s.status !== "active";
+    const row = el(`<div class="row"><div class="nm" style="${done ? "text-decoration:line-through;color:var(--on-surface-variant)" : ""}">${escHtml(s.step_text)}<div class="mt">${s.status === "did_not_happen" ? "Didn't happen · " : ""}${new Date(s.created_at).toLocaleDateString([], { month: "short", day: "numeric" })}${s.target_date ? ` · by ${escHtml(s.target_date)}` : ""}</div></div></div>`);
+    const b = done ? el(`<button class="btn text inline">Reopen</button>`) : el(`<button class="icon-btn" aria-label="Mark done">${icon("check")}</button>`);
+    b.onclick = () => act(() => call(`/api/earl/action-steps/${s.id}/status`, { status: done ? "active" : "completed" }), done ? "Reopened" : "Marked done");
+    row.appendChild(b);
+    return row;
+  };
+
   const draw = () => {
     body.innerHTML = "";
-    const section = (title, steps, open) => {
-      if (!steps.length) return;
-      body.appendChild(el(`<h2 class="sec-h">${escHtml(title)}</h2>`));
-      const rows = el(`<div class="rows"></div>`);
-      steps.forEach(s => {
-        const row = el(`<div class="row"><div class="nm">${escHtml(s.step_text)}<div class="mt">${new Date(s.created_at).toLocaleDateString([], { month: "short", day: "numeric" })}${s.target_date ? ` · by ${escHtml(s.target_date)}` : ""}</div></div></div>`);
-        if (open) {
-          const done = el(`<button class="icon-btn" aria-label="Mark done">${icon("check")}</button>`);
-          done.onclick = () => setStatus(s, "completed");
-          row.appendChild(done);
-        } else {
-          const undo = el(`<button class="btn text inline">Reopen</button>`);
-          undo.onclick = () => setStatus(s, "active");
-          row.appendChild(undo);
-        }
-        rows.appendChild(row);
+    body.appendChild(el(`<h2 class="sec-h" style="margin-top:8px">Goals</h2>`));
+    if (!goals.length) body.appendChild(el(`<p class="money-s" style="margin:0 4px 8px">No goals yet. Earl drafts them when you finish Stage 2 of setup, or add your own.</p>`));
+    goals.forEach(g => {
+      const c = el(`<div class="card"></div>`);
+      const head = el(`<div style="display:flex;gap:8px;align-items:flex-start"><div style="flex:1;font-size:16px;line-height:24px;${g.completed_at ? "text-decoration:line-through;color:var(--on-surface-variant)" : ""}">${escHtml(g.statement)}${!g.approved ? `<div class="mt" style="color:var(--primary)">Suggested by Earl</div>` : ""}${g.completed_at ? `<div class="mt">Done</div>` : ""}</div></div>`);
+      const acts = el(`<div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:8px"></div>`);
+      const btn = (label, fn, kind = "text") => { const b = el(`<button class="btn ${kind} inline">${label}</button>`); b.onclick = fn; acts.appendChild(b); };
+      if (!g.approved) btn("Keep", () => act(() => call(`/api/earl/goals/${g.id}`, { action: "approve" }), "Goal kept"), "tonal");
+      btn("Edit", () => {
+        const t = el(`<textarea rows="3" style="width:100%;box-sizing:border-box;border:0;border-radius:16px;background:var(--surface-c-high);color:var(--on-surface);padding:12px 16px;font-size:16px;line-height:24px"></textarea>`);
+        t.value = g.statement;
+        const save = el(`<button class="btn filled inline" style="margin-top:8px">Save</button>`);
+        save.onclick = () => act(() => call(`/api/earl/goals/${g.id}`, { action: "edit", statement: t.value }), "Goal saved");
+        head.replaceWith(el(`<div></div>`)); c.prepend(save); c.prepend(t); acts.remove();
       });
-      body.appendChild(rows);
-    };
-    if (!data.active.length && !data.completed.length && !(data.did_not_happen || []).length) body.appendChild(el(`<div class="empty">No action steps yet. When you tell Earl you'll do something, he saves it here.</div>`));
-    section("Open", data.active, true);
-    section("Done", data.completed, false);
-    section("Didn't happen", data.did_not_happen || [], false);
+      btn(g.completed_at ? "Reopen" : "Mark done", () => act(() => call(`/api/earl/goals/${g.id}`, { action: g.completed_at ? "reopen" : "complete" }), g.completed_at ? "Reopened" : "Goal done"));
+      btn("Remove", async () => { const ok = await confirmDialog({ title: "Remove this goal?", body: escHtml(g.statement), confirm: "Remove", danger: true }); if (ok) act(() => call(`/api/earl/goals/${g.id}`, { action: "remove" }), "Goal removed"); });
+      c.append(head, acts);
+      const under = steps.filter(s => s.benchmark_id === g.id);
+      if (under.length) { const r = el(`<div class="rows" style="margin-top:8px"></div>`); under.forEach(s => r.appendChild(stepRow(s))); c.appendChild(r); }
+      body.appendChild(c);
+    });
+    body.appendChild(addForm("Add a goal", "Add goal", v => act(() => call("/api/earl/goals", { statement: v }), "Goal added")));
+
+    body.appendChild(el(`<h2 class="sec-h">Action steps</h2>`));
+    const pick = el(`<select aria-label="Goal for this step" style="height:48px;border:0;border-radius:24px;background:var(--surface-c-high);color:var(--on-surface);padding:0 12px;font-size:14px;max-width:100%"><option value="">No goal</option>${goals.filter(g => !g.completed_at).map(g => `<option value="${g.id}">${escHtml(g.statement.slice(0, 40))}</option>`).join("")}</select>`);
+    body.appendChild(addForm("Add an action step", "Add step", (v, goalId) => act(() => call("/api/earl/action-steps", { step_text: v, benchmark_id: goalId || null }), "Step added"), goals.length ? pick : null));
+    const loose = steps.filter(s => !s.benchmark_id || !goals.some(g => g.id === s.benchmark_id));
+    if (!steps.length) body.appendChild(el(`<p class="money-s" style="margin:8px 4px">No action steps yet. When you tell Earl you'll do something, he saves it here.</p>`));
+    if (loose.length) { const r = el(`<div class="rows"></div>`); loose.forEach(s => r.appendChild(stepRow(s))); body.appendChild(r); }
   };
-  const setStatus = async (s, status) => {
-    try {
-      const r = await apiFetch(`/api/earl/action-steps/${s.id}/status`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status }) });
-      const b = await r.json();
-      if (!r.ok) throw new Error(b.message || `HTTP ${r.status}`);
-      for (const k of ["active", "completed", "did_not_happen"]) data[k] = (data[k] || []).filter(x => x.id !== s.id);
-      (data[status] ||= []).unshift(b.step);
-      draw();
-      snackbar(status === "completed" ? "Marked done" : "Reopened");
-    } catch (e) { snackbar("Couldn't update: " + e.message); }
-  };
-  draw();
+  load();
 }

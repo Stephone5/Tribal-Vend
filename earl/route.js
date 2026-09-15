@@ -9,7 +9,9 @@
 import crypto from "crypto";
 import * as db from "./db.js";
 import { MEMBER_ID, earlDbReady } from "./db.js";
-import { commanderChat, getSoulVersion, compressSession, generateSessionDebrief, generateConversationSummary } from "./claude.js";
+import { commanderChat, getSoulVersion, compressSession, generateSessionDebrief, generateConversationSummary, generateIntakeFollowUp, generateBenchmark } from "./claude.js";
+import * as setup from "./db-setup.js";
+import { QUESTIONS, STAGE_FRAMING, STAGE_COMPLETE, STAGE_BOUNDS, getQuestionByField } from "./intake-questions.js";
 import { buildMemoryContext, describeGap } from "./memory/context.js";
 
 const _inFlight = new Set();
@@ -29,21 +31,90 @@ function formatSessionNotes(notes) {
   return block;
 }
 
-// The Bridge's buildCoachingContext, minus the intake interview and goals that
-// Tribal Vend doesn't have: open action steps with ids, last unresolved thread,
-// overdue step.
-async function actionContext(userId) {
-  let ctx = "";
-  const steps = await db.getActionSteps(userId);
-  if (steps.length) {
-    ctx += "THEIR ACTION STEPS (your private map):\n";
-    for (const s of steps.slice(0, 30)) {
-      const mark = s.status === "completed" ? "✓ done" : s.status === "did_not_happen" ? "✗ did not happen" : "in progress";
-      ctx += `    · [action_step_id: ${s.id}] "${s.step_text}" (${mark})${s.target_date ? ` target ${s.target_date}` : ""}\n`;
+// ---- setup interview helpers (Bridge routes/api.js) ----
+function isVague(answer, check) {
+  if (!check) return false;
+  const raw = (answer || "").trim(), low = raw.toLowerCase();
+  const words = raw.split(/\s+/).filter(Boolean).length;
+  if (check.custom === "always_if_no") return /^(no|nope|not really|haven'?t|have not|not yet|never)\b/.test(low);
+  if (check.custom === "depends_only") return low === "depends" || /^(it )?depends\.?$/.test(low);
+  if (check.custom === "both_only") return /^both( equally)?\.?$/.test(low);
+  if (check.minWords && words < check.minWords) return true;
+  if (check.banned && check.banned.some(b => low.includes(b))) return true;
+  if (check.needNumber && !/\d/.test(raw)) return true;
+  if (check.needTimeRef && !/\d|year|month|week|day|decade/.test(low)) return true;
+  return false;
+}
+const answeredFieldSet = rs => new Set(rs.filter(r => r.answer != null && String(r.answer).trim() !== "").map(r => r.question_field));
+const nextQuestion = answered => QUESTIONS.find(q => !answered.has(q.field)) || null;
+const stageStatus = st => ({ stage_1: !!st?.stage_1_complete, stage_2: !!st?.stage_2_complete, stage_3: !!st?.stage_3_complete });
+
+async function completeStageIfDone(userId, stage, answered) {
+  const fields = QUESTIONS.filter(q => q.stage === stage).map(q => q.field);
+  if (!fields.every(f => answered.has(f))) return { completed: false };
+  const state = await setup.getMemberState(userId);
+  if (state[`stage_${stage}_complete`]) return { completed: false };
+  await setup.updateMemberState(userId, { [`stage_${stage}_complete`]: true, [`stage_${stage}_completed_at`]: new Date().toISOString() });
+  let goalsReady = false;
+  if (stage === 2) {
+    const all = await setup.getIntakeResponses(userId, 1);
+    const answers = {};
+    for (const r of all) answers[r.question_field] = r.follow_up_answer ? `${r.answer} ${r.follow_up_answer}` : r.answer;
+    const bench = await generateBenchmark(answers);
+    if (bench.statements && bench.statements.length) {
+      await setup.saveGeneratedGoals(userId, bench.statements);
+      if (bench.hidden_metrics) await setup.updateMemberState(userId, { hidden_metrics: bench.hidden_metrics });
+      goalsReady = true;
     }
-    ctx += "Use the exact action_step_id values above when marking steps complete.\n";
   }
-  const debriefs = await db.getDebriefs(userId, 1);
+  return { completed: true, message: STAGE_COMPLETE[stage], goalsReady };
+}
+
+// The Bridge's buildCoachingContext: interview profile, goals with the action
+// steps under each, operational baseline, interview status, last unresolved
+// thread, overdue step.
+async function actionContext(userId) {
+  const [responses, goals, state, steps, debriefs] = await Promise.all([
+    setup.getIntakeResponses(userId, 1), setup.getGoals(userId), setup.getMemberState(userId),
+    db.getActionSteps(userId), db.getDebriefs(userId, 1),
+  ]);
+  let ctx = "";
+  if (responses.length) {
+    ctx += "MEMBER PROFILE (from their interview):\n";
+    for (const r of responses) {
+      const q = getQuestionByField(r.question_field);
+      let val = r.answer || "";
+      if (r.follow_up_answer) val += " — " + r.follow_up_answer;
+      if (val.trim()) ctx += `- ${(q ? q.field : r.question_field).replace(/_/g, " ")}: ${val}\n`;
+    }
+  }
+  const mark = s => s.status === "completed" ? "✓ done" : s.status === "did_not_happen" ? "✗ did not happen" : "in progress";
+  if (goals.length) {
+    ctx += "\nTHEIR GOALS AND THE ACTION STEPS UNDER EACH (your private map):\n";
+    for (const b of goals) {
+      const done = !!b.completed_at;
+      ctx += `- [benchmark_id: ${b.id}] "${b.statement}"${done ? " — DONE (already marked complete)" : ""}${!b.approved ? " (suggested, not yet approved by the member)" : ""}\n`;
+      const under = steps.filter(s => s.benchmark_id === b.id);
+      for (const s of under) ctx += `    · [action_step_id: ${s.id}] "${s.step_text}" (${mark(s)})\n`;
+      if (under.length && !done && !under.some(s => s.status === "active")) ctx += "    → Every action step for this goal is closed. If it feels reached, ask them whether to mark the goal complete and move to the next — only call complete_goal if they say yes.\n";
+      if (!under.length && !done) ctx += "    · (no action steps yet — when the moment is right, help them name the concrete steps that would get them here, and save each with save_action_step tagged to this benchmark_id)\n";
+    }
+  }
+  const loose = steps.filter(s => !s.benchmark_id || !goals.some(g => g.id === s.benchmark_id));
+  if (loose.length) {
+    ctx += "\nACTION STEPS NOT TIED TO A GOAL:\n";
+    for (const s of loose.slice(0, 30)) ctx += `    · [action_step_id: ${s.id}] "${s.step_text}" (${mark(s)})${s.target_date ? ` target ${s.target_date}` : ""}\n`;
+  }
+  if (goals.length || steps.length) ctx += "Use the exact benchmark_id / action_step_id values above when saving steps, marking steps complete, or completing a goal.\n";
+  if (state.hidden_metrics && typeof state.hidden_metrics === "object") {
+    const lines = Object.entries(state.hidden_metrics).filter(([, v]) => v);
+    if (lines.length) ctx += "\nOPERATIONAL BASELINE (internal, not a talking point):\n" + lines.map(([k, v]) => `- ${k.replace(/_/g, " ")}: ${v}\n`).join("");
+  }
+  const incomplete = [];
+  if (!state.stage_1_complete) incomplete.push("Stage 1 (the basics)");
+  if (!state.stage_2_complete) incomplete.push("Stage 2 (operational reality)");
+  if (!state.stage_3_complete) incomplete.push("Stage 3 (personal context)");
+  if (incomplete.length) ctx += `\nINTAKE STATUS: They have not completed ${incomplete.join(" and ")}. Invite them back only when the missing information would meaningfully change your response.\n`;
   if (debriefs.length && debriefs[0].unresolved_item) ctx += `\nONE UNRESOLVED THREAD FROM LAST TIME: ${debriefs[0].unresolved_item}\n`;
   const overdue = steps.filter(s => s.status === "active" && s.target_date && new Date(s.target_date) < new Date());
   if (overdue.length) ctx += `\nOVERDUE ACTION STEP (raise if relevant): "${overdue[0].step_text}"\n`;
@@ -178,4 +249,82 @@ export function mountEarl(app, { rateLimit, getBusinessData }) {
     try { await db.deleteActionStep(MEMBER_ID, req.params.id); res.json({ ok: true }); }
     catch (e) { res.status(502).json({ error: "steps_failed", message: e.message }); }
   });
+
+  // ---- setup interview ----
+  app.get("/api/earl/interview/state", async (_req, res) => {
+    if (!earlDbReady()) return notReady(res);
+    try {
+      const state = await setup.getMemberState(MEMBER_ID);
+      const answered = answeredFieldSet(await setup.getIntakeResponses(MEMBER_ID, 1));
+      const q = nextQuestion(answered);
+      const base = { stages: stageStatus(state), progress: { answered: answered.size, total: QUESTIONS.length } };
+      if (!q) return res.json({ ...base, done: true });
+      res.json({ ...base, done: false, stage: q.stage, framing: q.n === STAGE_BOUNDS[q.stage].first ? STAGE_FRAMING[q.stage] : null, question: { n: q.n, field: q.field, text: q.question } });
+    } catch (e) { res.status(502).json({ error: "interview_failed", message: e.message }); }
+  });
+
+  app.post("/api/earl/interview/answer", async (req, res) => {
+    if (!earlDbReady()) return notReady(res);
+    try {
+      const { field, answer, isFollowUp } = req.body || {};
+      const q = getQuestionByField(field);
+      if (!q) return res.status(400).json({ error: "bad_request", message: "Unknown question." });
+      if (answer == null || String(answer).trim() === "") return res.status(400).json({ error: "bad_request", message: "Answer required." });
+      if (isFollowUp) await setup.updateIntakeFollowUp(MEMBER_ID, 1, field, undefined, String(answer));
+      else {
+        await setup.saveIntakeResponse(MEMBER_ID, 1, q.stage, field, String(answer));
+        if (isVague(answer, q.check) && q.followup.kind !== "none") {
+          let followUp = null;
+          if (q.followup.kind === "string") followUp = q.followup.template.replace("[answer]", String(answer).trim().split(/\s+/).slice(0, 12).join(" "));
+          else { try { followUp = await generateIntakeFollowUp(q.question, String(answer), q.followup.instruction); } catch (e) { followUp = null; } }
+          if (followUp) { await setup.updateIntakeFollowUp(MEMBER_ID, 1, field, followUp, undefined); return res.json({ followUp }); }
+        }
+      }
+      const answered = answeredFieldSet(await setup.getIntakeResponses(MEMBER_ID, 1));
+      const stageResult = await completeStageIfDone(MEMBER_ID, q.stage, answered);
+      const nq = nextQuestion(answered);
+      const state = await setup.getMemberState(MEMBER_ID);
+      const out = { stageComplete: stageResult.completed ? stageResult.message : null, goalsReady: !!stageResult.goalsReady, stages: stageStatus(state), progress: { answered: answered.size, total: QUESTIONS.length } };
+      if (!nq) return res.json({ ...out, done: true });
+      res.json({ ...out, done: false, stage: nq.stage, framing: nq.n === STAGE_BOUNDS[nq.stage].first && stageResult.completed ? STAGE_FRAMING[nq.stage] : null, question: { n: nq.n, field: nq.field, text: nq.question } });
+    } catch (e) { console.error("[earl] interview answer:", e.message); res.status(502).json({ error: "interview_failed", message: `Couldn't save your answer: ${e.message}` }); }
+  });
+
+  // ---- goals ----
+  app.get("/api/earl/goals", async (_req, res) => {
+    if (!earlDbReady()) return notReady(res);
+    try { res.json({ goals: await setup.getGoals(MEMBER_ID) }); }
+    catch (e) { res.status(502).json({ error: "goals_failed", message: e.message }); }
+  });
+  app.post("/api/earl/goals", async (req, res) => {
+    if (!earlDbReady()) return notReady(res);
+    const statement = String(req.body?.statement || "").trim();
+    if (!statement) return res.status(400).json({ error: "bad_request", message: "Write the goal first." });
+    try { res.json({ goal: await setup.addGoal(MEMBER_ID, statement) }); }
+    catch (e) { res.status(502).json({ error: "goals_failed", message: e.message }); }
+  });
+  app.post("/api/earl/goals/:id", async (req, res) => {
+    if (!earlDbReady()) return notReady(res);
+    try {
+      const b = req.body || {};
+      let goal;
+      if (b.action === "complete") goal = await setup.completeGoal(MEMBER_ID, req.params.id);
+      else if (b.action === "reopen") goal = await setup.updateGoal(MEMBER_ID, req.params.id, { completed_at: null });
+      else if (b.action === "approve") goal = await setup.updateGoal(MEMBER_ID, req.params.id, { approved: true });
+      else if (b.action === "remove") goal = await setup.removeGoal(MEMBER_ID, req.params.id);
+      else if (b.action === "edit" && String(b.statement || "").trim()) goal = await setup.updateGoal(MEMBER_ID, req.params.id, { statement: String(b.statement).trim(), approved: true });
+      else return res.status(400).json({ error: "bad_request", message: "Unknown change." });
+      res.json({ goal });
+    } catch (e) { res.status(502).json({ error: "goals_failed", message: e.message }); }
+  });
+
+  // ---- add an action step yourself ----
+  app.post("/api/earl/action-steps", async (req, res) => {
+    if (!earlDbReady()) return notReady(res);
+    const text = String(req.body?.step_text || "").trim();
+    if (!text) return res.status(400).json({ error: "bad_request", message: "Write the step first." });
+    try { res.json({ step: await db.saveActionStep(MEMBER_ID, text, null, req.body?.target_date || null, req.body?.benchmark_id || null) }); }
+    catch (e) { res.status(502).json({ error: "steps_failed", message: e.message }); }
+  });
+
 }

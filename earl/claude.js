@@ -6,7 +6,7 @@
 // Tribal Vend differences:
 // - Case studies are read from case-study-index.md (FULL STORIES) instead of a
 //   Supabase table, so there's nothing to seed.
-// - Tools for Bridge membership features (goals, paid extension, "Your Numbers"
+// - Tools for Bridge billing features (paid extension, "Your Numbers"
 //   suggestions) are left out; the app already has the real numbers.
 
 import fs from "fs";
@@ -16,6 +16,7 @@ import { fileURLToPath } from "url";
 import Anthropic from "@anthropic-ai/sdk";
 import { scrubTells } from "./antitells.js";
 import { saveActionStep, getActionStep, updateActionStepStatus } from "./db.js";
+import { completeGoal } from "./db-setup.js";
 
 const DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), "system");
 const read = f => fs.readFileSync(path.join(DIR, f), "utf8");
@@ -94,10 +95,11 @@ const TOOLS = [
   },
   {
     name: "save_action_step",
-    description: "Call this when the member commits to a specific, concrete action they will take before your next conversation. Save it in their exact words, not your paraphrase. Do not invent action steps the member did not volunteer — but if they name several at once, save every one they commit to (call this tool once per step, back to back). Never make them slow down or wait until later. After saving, confirm to the member in your own voice.",
+    description: "Call this when the member commits to a specific, concrete action they will take before your next conversation. Save it in their exact words, not your paraphrase. Do not invent action steps the member did not volunteer — but if they name several at once, save every one they commit to (call this tool once per step, back to back). Never make them slow down or wait until later. After saving, confirm to the member in your own voice. If a step clearly serves one of their named goals, include the exact benchmark_id from your context — copy it character for character, do not paraphrase or invent it.",
     input_schema: { type: "object", properties: {
       step_text: { type: "string", description: "The action the member committed to, in their exact words" },
       target_date: { type: "string", description: "Optional target completion date in YYYY-MM-DD form, only if the member gave one" },
+      benchmark_id: { type: "string", description: "The benchmark_id from your context for the goal this step serves. Copy it exactly. Only include if this step clearly belongs to one of their named goals." },
     }, required: ["step_text"] },
   },
   {
@@ -107,6 +109,13 @@ const TOOLS = [
       action_step_id: { type: "string", description: "The action_step_id from your context. Copy it exactly." },
       outcome: { type: "string", enum: ["completed", "did_not_happen"] },
     }, required: ["action_step_id", "outcome"] },
+  },
+  {
+    name: "complete_goal",
+    description: "Marks one of the member's goals complete. NEVER call this on your own judgment. The sequence is: the member says (or their action steps show) the goal is reached → you ask them directly, in your own words, whether to mark it complete and move to the next one → they say yes → THEN you call this. Use the exact benchmark_id from your context. If they hesitate or say not yet, do not call it.",
+    input_schema: { type: "object", properties: {
+      benchmark_id: { type: "string", description: "The benchmark_id from your context for the goal the member confirmed is complete. Copy it exactly." },
+    }, required: ["benchmark_id"] },
   },
 ];
 
@@ -146,7 +155,7 @@ export async function commanderChat(message, sessionContext, conversationHistory
       if (block.name === "fetch_case_study") {
         content = fetchCaseStudyStory(block.input) || "No matching case study found.";
       } else if (block.name === "save_action_step") {
-        try { await saveActionStep(persist.userId, block.input.step_text, persist.sessionId || null, block.input.target_date || null); content = "Action step saved."; }
+        try { await saveActionStep(persist.userId, block.input.step_text, persist.sessionId || null, block.input.target_date || null, block.input.benchmark_id || null); content = "Action step saved."; }
         catch (e) { console.error("[earl] save_action_step:", e.message); content = "The action step could not be saved: " + e.message; }
       } else if (block.name === "mark_action_step_complete") {
         try {
@@ -154,6 +163,10 @@ export async function commanderChat(message, sessionContext, conversationHistory
           if (step && step.user_id === persist.userId) { await updateActionStepStatus(block.input.action_step_id, block.input.outcome); content = "Action step updated."; }
           else content = "No action step with that id.";
         } catch (e) { console.error("[earl] mark_action_step_complete:", e.message); content = "The action step could not be updated: " + e.message; }
+      }
+      else if (block.name === "complete_goal") {
+        try { await completeGoal(persist.userId, block.input.benchmark_id); content = "Goal marked complete."; }
+        catch (e) { console.error("[earl] complete_goal:", e.message); content = "The goal could not be marked complete: " + e.message; }
       }
       results.push({ type: "tool_result", tool_use_id: block.id, content });
     }
@@ -205,6 +218,88 @@ export async function compressSession(conversationMessages) {
   const m = response.content[0].text.match(/\{[\s\S]*\}/);
   if (!m) throw new Error("compressSession: non-JSON response");
   return JSON.parse(m[0]);
+}
+
+
+// ---- setup interview helpers, copied from the Bridge ----
+export async function generateIntakeFollowUp(questionText, answer, instruction) {
+  const soul = getSoulPrimer();
+  const prompt = `You are interviewing a small business owner, one question at a time. You just asked: "${questionText}". They answered: "${answer}". ${instruction}
+
+Ask exactly one short follow-up question in your own voice. Output only the question — no preamble, no explanation, nothing else.`;
+
+  const messages = [
+    ...(soul ? [{ role: 'user', content: '.' }, { role: 'assistant', content: soul }] : []),
+    { role: 'user', content: prompt }
+  ];
+
+  const response = await client.messages.create({
+    model: "claude-haiku-4-5",
+    max_tokens: 150,
+    messages
+  });
+  const t = response.content.find(b => b.type === 'text');
+  return stripMarkdown(t ? t.text : '').trim();
+}
+
+export async function generateBenchmark(answers) {
+  const get = (f) => (answers && answers[f]) ? answers[f] : '';
+
+  const prompt = `A member has completed enough of their intake to set their benchmark. Using their own words, write 3 to 5 success statements that capture what they are working toward. Each statement must be drawn directly from what they said — not reworded into abstractions. If they said "take a Saturday off without everything falling apart," that is the statement, not "operational independence."
+
+CRITICAL SCOPE: These statements are the member's goals for the next six months of working together — the things that, when reached, mean their business is in a genuinely thriving spot as THEY define it. Draw them primarily from the member's near-term target below. Every statement must be something that can meaningfully move within roughly six months to a year.
+
+The member's long-term vision (three-to-five years) is provided only as background — it tells you where they ultimately want to go. Do NOT turn the long-term vision into goal statements. Anything that cannot move in the six-month window — selling the business, exiting, retiring, passing it to family — is context, not a goal. Keep every statement on what thriving looks like in the near term.
+
+Give each statement a starting rating from 1 to 10 reflecting where they are NOW (these should be low — they reflect the current gap, not the goal).
+
+Also return a hidden_metrics object summarizing their operational baseline for internal use.
+
+Return ONLY JSON, no markdown:
+{
+  "statements": [ { "statement": "their words", "starting_rating": 3 } ],
+  "hidden_metrics": {
+    "annual_revenue": "", "knows_break_even": "", "cash_runway": "",
+    "raised_prices": "", "knows_margin": "", "customer_concentration": "",
+    "time_trapped": "", "isolation": ""
+  }
+}
+
+PRIMARY GOAL SOURCE — their near-term target (best realistic position ~a year out): ${get('graduation_target')}
+What they want from working together: ${get('desired_outcome')}
+What their actual life would look like in success: ${get('life_success_definition')}
+
+BACKGROUND ONLY — their long-term three-to-five year vision (do not make goals from this): ${get('north_star')}
+
+Operational baseline:
+- Annual revenue: ${get('annual_revenue')}
+- Break-even known: ${get('break_even')}
+- Cash runway: ${get('cash_runway')}
+- Raised prices recently: ${get('pricing_history')}
+- Profit margin known: ${get('profit_margin')}
+- Customer concentration: ${get('customer_concentration')}
+- Time usage: ${get('time_usage')}
+- Support network: ${get('support_network')}
+- Peer network: ${get('peer_network')}`;
+
+  const response = await client.messages.create({
+    model: 'claude-sonnet-4-6',
+    max_tokens: 1200,
+    system: 'You extract a member benchmark from intake answers. Use the member\'s own language. Return only a JSON object — no markdown, no backticks, no prose.',
+    messages: [{ role: 'user', content: prompt }]
+  });
+
+  const text = response.content[0].text;
+  const jsonMatch = text.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) throw new Error('generateBenchmark: non-JSON response: ' + text.substring(0, 200));
+  const parsed = JSON.parse(jsonMatch[0]);
+  if (!Array.isArray(parsed.statements)) parsed.statements = [];
+  // Clamp to 3-5 and sane ratings.
+  parsed.statements = parsed.statements.slice(0, 5).map(s => ({
+    statement: String(s.statement || '').trim(),
+    starting_rating: Math.min(10, Math.max(1, parseInt(s.starting_rating, 10) || 2))
+  })).filter(s => s.statement);
+  return parsed;
 }
 
 export const _test = { caseStudies, getSystemPrompt };

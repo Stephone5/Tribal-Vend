@@ -127,7 +127,7 @@ function stepKey(t) {
   return String(t || "").toLowerCase().replace(/[^a-z0-9\s]/g, "")
     .replace(/\b(the|a|an|my|to|for|and|today|this|that)\b/g, "").replace(/\s+/g, " ").trim();
 }
-export async function saveActionStep(userId, stepText, sessionId = null, targetDate = null) {
+export async function saveActionStep(userId, stepText, sessionId = null, targetDate = null, benchmarkId = null) {
   const db = must();
   const key = stepKey(stepText);
   if (key) {
@@ -135,11 +135,14 @@ export async function saveActionStep(userId, stepText, sessionId = null, targetD
     const { data: existing } = await db.from("action_steps").select("*").eq("user_id", userId).or(`status.eq.active,created_at.gte.${dayAgo}`);
     const match = (existing || []).find(s => stepKey(s.step_text) === key);
     if (match) {
-      if (targetDate && !match.target_date) await db.from("action_steps").update({ target_date: targetDate }).eq("id", match.id);
+      const patch = {};
+      if (targetDate && !match.target_date) patch.target_date = targetDate;
+      if (benchmarkId && !match.benchmark_id) patch.benchmark_id = benchmarkId;
+      if (Object.keys(patch).length) await db.from("action_steps").update(patch).eq("id", match.id);
       return match;
     }
   }
-  const { data, error } = await db.from("action_steps").insert({ user_id: userId, step_text: stepText, source_session_id: sessionId, target_date: targetDate, status: "active" }).select().single();
+  const { data, error } = await db.from("action_steps").insert({ user_id: userId, step_text: stepText, source_session_id: sessionId, target_date: targetDate, status: "active", ...(benchmarkId ? { benchmark_id: benchmarkId } : {}) }).select().single();
   if (error) throw new Error("saving action step failed: " + error.message);
   return data;
 }
