@@ -401,8 +401,50 @@ async function loadCloset() {
     await setDoc(CLOSET_KEY, doc);
     await setDoc(SEEDVER_KEY, SEED_VERSION);
   }
+  // One-time: add the OK fridge-machine Sam's Club buys (order 1045 3481 805,
+  // picked up Aug 31, plus the Sep 1/4/5 deliveries). Every line was Qty 1 at the
+  // price actually paid. Adds onto matching items; new items created. Runs once.
+  if (!(await getDoc(OK_BUY_KEY).catch(() => null))) {
+    const items = doc.items || (doc.items = []);
+    // Stephen: snacks and candy are at zero now (only the fridge machine is running).
+    items.forEach(i => { if (i.folder === "Snacks" || i.folder === "Candy") i.qty = 0; });
+    for (const b of OK_BUY_0831) {
+      const hit = items.find(i => b.match.includes(String(i.name).trim().toLowerCase()));
+      const unit = +(b.paid / b.units).toFixed(2);
+      if (hit) { hit.qty = (Number(hit.qty) || 0) + b.units; hit.price = unit; if (b.rename) hit.name = b.rename; }
+      else items.push({ id: b.id, folder: b.folder, name: b.name, price: unit, qty: b.units, min: 0, img: null });
+    }
+    if (!doc.countedAt || doc.countedAt < "2026-08-31") doc.countedAt = "2026-08-31";
+    await setDoc(CLOSET_KEY, doc);
+    await setDoc(OK_BUY_KEY, new Date().toISOString());
+  }
   return doc;
 }
+
+const OK_BUY_KEY = "closet:okbuy-2026-08-31";
+const OK_BUY_0831 = [
+  { id: "OK0831-01", folder: "Snacks",    name: "Nissin Chow Mein",      match: ["nissin chow mein"], units: 8,  paid: 9.97 },
+  { id: "OK0831-02", folder: "Cold Food", name: "Hot Pockets",           match: ["hot pockets"], units: 20, paid: 14.88 },
+  { id: "OK0831-03", folder: "Cold Food", name: "Jimmy Dean SEC",        match: ["jimmy dean sec"], units: 12, paid: 11.73 },
+  { id: "OK0831-04", folder: "Cold Food", name: "Uncrustables",          match: ["uncrustables"], units: 24, paid: 11.87 },
+  { id: "OK0831-05", folder: "Drinks",    name: "Fiji Water",            match: ["fiji water"], units: 24, paid: 18.98 },
+  { id: "OK0831-06", folder: "Drinks",    name: "Vitamin Water",         match: ["vitamin water"], units: 18, paid: 14.78 },
+  { id: "OK0831-07", folder: "Drinks",    name: "AriZona Green Tea",     match: ["arizona green tea"], units: 24, paid: 10.78 },
+  { id: "OK0831-08", folder: "Drinks",    name: "Coke",                  match: ["coke"], units: 24, paid: 15.98 },
+  { id: "OK0831-09", folder: "Drinks",    name: "Dr Pepper",             match: ["dr pepper"], units: 24, paid: 15.98 },
+  { id: "OK0831-10", folder: "Drinks",    name: "Sparkling ICE",         match: ["sparkling ice"], units: 24, paid: 17.98 },
+  { id: "OK0831-11", folder: "Drinks",    name: "Pepsi",                 match: ["pepsi"], units: 24, paid: 15.68 },
+  { id: "OK0831-12", folder: "Drinks",    name: "Gatorade",              match: ["gatorade blue", "gatorade"], rename: "Gatorade", units: 24, paid: 17.98 },
+  { id: "OK0831-13", folder: "Drinks",    name: "Celsius",               match: ["celsius"], units: 18, paid: 17.98 },
+  { id: "OK0831-14", folder: "Drinks",    name: "Red Bull",              match: ["red bull"], units: 24, paid: 42.48 },
+  { id: "OK0831-15", folder: "Drinks",    name: "Coffee Monster",        match: ["coffee monster"], units: 12, paid: 25.98 },
+  { id: "OK0831-16", folder: "Drinks",    name: "Gold Peak Zero Sweet Tea", match: ["gold peak zero sweet tea"], units: 18, paid: 16.98 },
+  { id: "OK0831-17", folder: "Drinks",    name: "Mtn Dew",               match: ["mtn dew"], units: 24, paid: 15.68 },
+  { id: "OK0831-18", folder: "Drinks",    name: "Arnold Palmer",         match: ["arnold palmer"], units: 24, paid: 10.78 },
+  { id: "OK0831-19", folder: "Drinks",    name: "Black Rifle Coffee",    match: ["black rifle coffee"], units: 12, paid: 23.48 },
+  { id: "OK0831-20", folder: "Drinks",    name: "Diet Mtn Dew",          match: ["diet mtn dew"], units: 24, paid: 15.68 },
+  { id: "OK0831-21", folder: "Drinks",    name: "Monster",               match: ["monster"], units: 24, paid: 37.98 },
+];
 
 // Default count date — the last fill/count when the 810 was taken. Any in-app
 // save updates it to that day (a fresh recount resets the baseline).
