@@ -18,7 +18,57 @@ const usd = n => "$" + (Number(n)||0).toLocaleString("en-US",{minimumFractionDig
 let STATE = { items: [], hist: [] };
 let saveTimer = null;
 
+const DIRTYK = "tv_closet_dirty";
+let DIRTY = (()=>{ try { return localStorage.getItem(DIRTYK)==="1"; } catch { return false; } })();
+
 function load(){ return STATE; }
+// Count edits are held on this phone until you tap Save. Nothing half-saves.
+function stage(d){
+  STATE = d; DIRTY = true;
+  try { localStorage.setItem(LSK, JSON.stringify(STATE)); localStorage.setItem(DIRTYK,"1"); } catch(e){}
+  paintSaveBar();
+}
+async function saveNow(){
+  const bar = document.getElementById("cl-savebar");
+  const btn = bar && bar.querySelector("button");
+  const msg = bar && bar.querySelector(".m");
+  if (btn){ btn.disabled = true; btn.textContent = "Saving…"; }
+  try {
+    const r = await apiFetch("/api/closet", { method:"PUT", headers:{"Content-Type":"application/json"}, body: JSON.stringify(STATE) });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    DIRTY = false; try { localStorage.removeItem(DIRTYK); } catch(e){}
+    await pull(); paint();
+    const b2 = document.getElementById("cl-savebar");
+    if (b2){
+      b2.hidden = false; b2.classList.add("ok");
+      b2.querySelector(".m").textContent = "Saved. This is your new count.";
+      b2.querySelector("button").hidden = true;
+      setTimeout(()=>{ if(!DIRTY){ b2.hidden = true; b2.classList.remove("ok"); b2.querySelector("button").hidden = false; } }, 2500);
+    }
+  } catch(e) {
+    if (btn){ btn.disabled = false; btn.textContent = "Try again"; }
+    if (msg) msg.textContent = "Didn't save. Couldn't reach the server. Your counts are still on this phone.";
+    if (bar) bar.classList.add("err");
+  }
+}
+function paintSaveBar(){
+  let bar = document.getElementById("cl-savebar");
+  if (!bar) {
+    bar = elc(`<div id="cl-savebar" hidden><div class="m"></div><button>Save</button></div>`);
+    bar.querySelector("button").onclick = saveNow;
+    document.body.appendChild(bar);
+  }
+  const onInventory = ROOT && !ROOT.hidden;
+  bar.hidden = !(DIRTY && onInventory);
+  bar.classList.remove("err","ok");
+  const btn = bar.querySelector("button"); btn.hidden = false; btn.disabled = false; btn.textContent = "Save";
+  bar.querySelector(".m").textContent = "Unsaved changes";
+}
+export function closetTabHidden(){
+  const bar = document.getElementById("cl-savebar");
+  if (bar) bar.hidden = true;
+}
+
 function save(d){
   STATE = d;
   try { localStorage.setItem(LSK, JSON.stringify(STATE)); } catch(e){}
@@ -34,6 +84,8 @@ async function pull(){
     const r = await apiFetch("/api/closet");
     if (r.ok) {
       const server = await r.json();
+      // Unsaved counts on this phone win until you tap Save.
+      if (DIRTY && cached && cached.items) { cached.live = server.live; cached.countedAt = server.countedAt; STATE = cached; return; }
       // Safety: if the server came back empty but this device has data, keep the
       // device's copy and push it back up — a server hiccup can't erase your closet.
       if ((!server.items || !server.items.length) && cached && cached.items && cached.items.length) {
@@ -70,7 +122,16 @@ function injectStyles(){
     .cl-low{display:inline-block;font-size:10px;font-weight:800;color:#8a6d0a;background:rgba(184,134,11,.16);padding:1px 6px;border-radius:99px;margin-left:6px}
     .cl-step{display:flex;align-items:center;gap:8px;flex:none}
     .cl-step button{width:34px;height:34px;border-radius:10px;border:1px solid var(--line);background:var(--surface-2);color:var(--ink);font-size:20px;font-weight:700;cursor:pointer;line-height:1}
-    .cl-step .q{min-width:26px;text-align:center;font-weight:800;font-variant-numeric:tabular-nums}
+    .cl-step .q{width:48px;height:36px;text-align:center;font-size:17px;font-weight:800;font-variant-numeric:tabular-nums;font-family:inherit;background:var(--surface-2);color:var(--ink);border:1.5px solid var(--line);border-radius:10px;padding:0}
+    .cl-step .q:focus{outline:none;border-color:var(--ink);background:var(--surface)}
+    #cl-savebar{position:fixed;left:12px;right:12px;bottom:calc(66px + env(safe-area-inset-bottom));z-index:40;display:flex;align-items:center;gap:10px;padding:10px 10px 10px 16px;border-radius:16px;background:var(--char);color:#fff;box-shadow:0 8px 28px rgba(0,0,0,.35)}
+    #cl-savebar[hidden]{display:none}
+    #cl-savebar .m{flex:1;font-size:14px;font-weight:700;line-height:1.3}
+    #cl-savebar button{flex:none;height:44px;padding:0 22px;border-radius:12px;border:0;background:var(--gold);color:#282828;font-size:16px;font-weight:800;font-family:inherit;cursor:pointer}
+    #cl-savebar button[hidden]{display:none}
+    #cl-savebar.err{background:var(--bad)}
+    #cl-savebar.ok{background:var(--good)}
+    body.kbd #cl-savebar{bottom:12px}
     .cl-modal{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:50;display:flex;align-items:flex-end;justify-content:center}
     .cl-sheet{background:var(--surface);width:100%;max-width:520px;border-radius:20px 20px 0 0;padding:16px 16px calc(20px + env(safe-area-inset-bottom));max-height:92vh;overflow:auto}
     .cl-sheet h3{margin:2px 2px 12px;font-size:17px}
@@ -138,6 +199,7 @@ function logHist(d, item, delta){
 }
 
 function paint(){
+  paintSaveBar();
   const d = load();
   const root = ROOT; root.innerHTML = "";
 
@@ -213,26 +275,34 @@ function itemRow(it){
     </div>
     <div class="cl-step">
       <button data-a="minus">–</button>
-      <span class="q">${Number(it.qty)||0}</span>
+      <input class="q" inputmode="numeric" pattern="[0-9]*" enterkeyhint="done" value="${Number(it.qty)||0}" aria-label="Count for ${escapeHtml(it.name)}">
       <button data-a="plus">+</button>
     </div>
   </div>`);
-  const bump = (delta)=>{
+  const setQty = (next)=>{
     const d = load();
     const item = d.items.find(x=>x.id===it.id); if(!item) return;
-    item.qty = Math.max(0, (Number(item.qty)||0) + delta);
+    next = Math.max(0, Math.floor(Number(next)||0));
+    const delta = next - (Number(item.qty)||0);
+    if (!delta) return;
+    item.qty = next;
     logHist(d, item, delta);
-    save(d);
+    stage(d);
     it.qty = item.qty;
-    row.querySelector(".q").textContent = item.qty;
+    const qin = row.querySelector(".q"); if (document.activeElement !== qin) qin.value = item.qty;
     row.querySelector(".mt").textContent = `${usd(item.price)} ea · ${usd(item.qty*(Number(item.price)||0))} total`;
     const lowNow = item.min!=null && item.min!=="" && Number(item.qty)<=Number(item.min);
     const nm = row.querySelector(".cl-nmline");
     nm.innerHTML = `<span class="cl-nmtext">${escapeHtml(item.name)}</span>${lowNow?`<span class="cl-low">LOW</span>`:""}`;
     updateRollups();
   };
-  row.querySelector('[data-a="minus"]').onclick = ()=>bump(-1);
-  row.querySelector('[data-a="plus"]').onclick = ()=>bump(1);
+  const qi = row.querySelector(".q");
+  row.querySelector('[data-a="minus"]').onclick = ()=>setQty((Number(it.qty)||0) - 1);
+  row.querySelector('[data-a="plus"]').onclick = ()=>setQty((Number(it.qty)||0) + 1);
+  qi.onfocus = ()=>setTimeout(()=>qi.select(), 0);   // tapping selects the number so typing replaces it
+  qi.oninput = ()=>{ qi.value = qi.value.replace(/[^0-9]/g,""); if (qi.value !== "") setQty(qi.value); };
+  qi.onblur = ()=>{ if (qi.value === "") qi.value = Number(it.qty)||0; };
+  qi.onkeydown = e=>{ if (e.key === "Enter") qi.blur(); };
   row.querySelector(".cl-mid").onclick = ()=>openEditor(it);
   row.querySelector(".cl-thumb").onclick = ()=>openEditor(it);
   return row;

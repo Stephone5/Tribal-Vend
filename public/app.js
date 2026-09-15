@@ -1,5 +1,5 @@
 import { MACHINES, packageOf } from "./data.js";
-import { renderCloset } from "./closet.js";
+import { renderCloset, closetTabHidden } from "./closet.js";
 import { renderCompany } from "./company.js";
 import { renderChat } from "./chat.js";
 import { apiFetch, setPass } from "./api.js";
@@ -32,7 +32,7 @@ document.querySelectorAll("nav button").forEach(b=>{
     $("#runs").hidden = tab!=="runs";
     $("#closet").hidden = tab!=="closet";
     $("#chat").hidden = tab!=="chat";
-    if(tab==="closet") renderCloset($("#closet"));
+    if(tab==="closet") renderCloset($("#closet")); else closetTabHidden();
     if(tab==="company") renderCompany($("#company"));
     if(tab==="chat") renderChat($("#chat"));
     // Chat manages its own scroll (opens at the bottom); everything else tops out.
@@ -310,3 +310,17 @@ function maybeShowInstall(){
   renderRuns();
   maybeShowInstall();
 })();
+
+// Keyboard open: hide the bottom nav. Otherwise it rides up on the keyboard,
+// covers the box being typed in, and the phone drags the page to recenter it.
+// Chat has its own input bar, so it's left alone.
+document.addEventListener("focusin", e => {
+  const t = e.target;
+  if (t.matches && t.matches("input:not([type=file]):not([type=checkbox]):not([type=radio]), textarea") && !t.closest("#chat")) document.body.classList.add("kbd");
+});
+document.addEventListener("focusout", () => setTimeout(() => {
+  const a = document.activeElement;
+  if (!(a && a.matches && a.matches("input, textarea"))) document.body.classList.remove("kbd");
+}, 60));
+// Restock count boxes: tapping selects the number so typing replaces it.
+document.addEventListener("focusin", e => { if (e.target.classList && e.target.classList.contains("uq")) setTimeout(() => e.target.select(), 0); });
