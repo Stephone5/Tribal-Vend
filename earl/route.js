@@ -58,7 +58,7 @@ export function mountEarl(app, { rateLimit, getBusinessData }) {
     const userId = MEMBER_ID;
     let messages;
     try { messages = await db.getHistory(userId, 40); }
-    catch (e) { console.error("[earl] history:", e.message); return res.status(502).json({ error: "history_failed", message: "Couldn't load your conversation with Earl. Try again." }); }
+    catch (e) { console.error("[earl] history:", e.message); return res.status(502).json({ error: "history_failed", message: `Couldn't load your conversation with Earl. Database said: ${e.message}` }); }
     let summary = null, preConversation = null;
     try {
       const info = await db.getLatestSessionId(userId);

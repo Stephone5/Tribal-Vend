@@ -36,7 +36,7 @@ export async function getHistory(userId, limit = 40) {
     if (!error) return (data || []).reverse();
     lastError = error;
   }
-  throw new Error("history load failed: " + (lastError?.message || "unknown"));
+  throw new Error((lastError?.message || "unknown error") + (lastError?.hint ? ` (${lastError.hint})` : "") + (lastError?.code ? ` [${lastError.code}]` : ""));
 }
 
 export async function getLatestSessionId(userId) {
