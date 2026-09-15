@@ -3,13 +3,12 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
-<meta name="theme-color" content="#f8f9ff" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#111418" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" id="themeColor" content="#111418">
 <meta name="color-scheme" content="light dark">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icons/icon-192.png">
 <title>Tribal Vend</title>
-<script>/* theme before first paint: saved choice, else follow the phone */try{var t=localStorage.getItem("tv_theme");if(!t)t=matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light";document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
+<script>/* theme before first paint: saved choice, else follow the phone */try{var t=localStorage.getItem("tv_theme");if(!t)t=matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light";document.documentElement.setAttribute("data-theme",t);document.getElementById("themeColor").content=t==="dark"?"#111418":"#f8f9ff";document.documentElement.style.colorScheme=t;}catch(e){}</script>
 <style>
 /* =====================================================================
    Tribal Vend — Material 3. Every value traces to DESIGN.md.

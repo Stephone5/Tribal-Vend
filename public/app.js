@@ -70,7 +70,11 @@ abRefresh.onclick = async () => {
   const btn = $("#themeBtn");
   const metaColor = () => {
     const bg = getComputedStyle(document.documentElement).getPropertyValue("--surface").trim();
-    document.querySelectorAll('meta[name="theme-color"]').forEach(m => { m.setAttribute("content", bg); m.removeAttribute("media"); });
+    // swap in a fresh tag: Android Chrome repaints the status bar reliably on a new node
+    document.querySelectorAll('meta[name="theme-color"]').forEach(m => m.remove());
+    const m = document.createElement("meta"); m.name = "theme-color"; m.id = "themeColor"; m.content = bg;
+    document.head.appendChild(m);
+    document.documentElement.style.colorScheme = document.documentElement.getAttribute("data-theme");
   };
   const paint = () => {
     const dark = document.documentElement.getAttribute("data-theme") === "dark";
