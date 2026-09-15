@@ -405,10 +405,10 @@ async function loadCloset() {
   // picked up Aug 31, plus the Sep 1/4/5 deliveries). Every line was Qty 1 at the
   // price actually paid. Adds onto matching items; new items created. Runs once.
   // Correction: inventory = exactly the Sam's order, from zero. The first pass
-  // added onto old PA counts (e.g. AriZona 20 + 24 = 44). Only runs if nobody
-  // has recounted since (a save moves countedAt off Aug 31).
-  if ((await getDoc(OK_BUY_KEY).catch(() => null)) && !(await getDoc(OK_EXACT_KEY).catch(() => null))
-      && doc.countedAt === "2026-08-31") {
+  // added onto old PA counts (e.g. AriZona 20 + 24 = 44). Runs once and
+  // overwrites any edits made in between.
+  if ((await getDoc(OK_BUY_KEY).catch(() => null)) && !(await getDoc(OK_EXACT_KEY).catch(() => null))) {
+    doc.countedAt = "2026-08-31"; // Stephen: overwrite anything saved after the bad load
     const items = doc.items || [];
     items.forEach(i => { i.qty = 0; });
     for (const b of OK_BUY_0831) {
@@ -438,7 +438,7 @@ async function loadCloset() {
 }
 
 const OK_BUY_KEY = "closet:okbuy-2026-08-31";
-const OK_EXACT_KEY = "closet:okbuy-exact-2026-08-31";
+const OK_EXACT_KEY = "closet:okbuy-exact-2026-08-31-v2";
 const OK_BUY_0831 = [
   { id: "OK0831-01", folder: "Cold Food", name: "Nissin Chow Mein",      match: ["nissin chow mein"], units: 8,  paid: 9.97 },
   { id: "OK0831-02", folder: "Cold Food", name: "Hot Pockets",           match: ["hot pockets"], units: 20, paid: 14.88 },
