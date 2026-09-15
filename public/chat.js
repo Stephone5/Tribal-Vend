@@ -1,12 +1,12 @@
-// Ask — talk to the brain about the business, with everything it knows in context.
+// Ask — Earl, the mentor from the Bridge, living in this app. His conversation
+// and memory live in his own database on the server; this screen just shows it.
 
 import { apiFetch } from "./api.js";
-import { icon, setTabSub, confirmDialog, snackbar } from "./ui.js";
+import { icon, setTabSub, confirmDialog, snackbar, sheet } from "./ui.js";
 
 const el = h => { const t = document.createElement("template"); t.innerHTML = h.trim(); return t.content.firstChild; };
-const LSK = "tv_chat_v1";
 
-let msgs = [];
+let msgs = [], loaded = false, loadError = null, preNote = null;
 let ROOT = null, injected = false, sending = false;
 
 function injectStyles() {
@@ -35,7 +35,10 @@ function injectStyles() {
     .ch-send{width:48px; height:48px; flex:none; border:0; border-radius:var(--r-full); background:var(--primary); color:var(--on-primary); display:inline-flex; align-items:center; justify-content:center; cursor:pointer}
     .ch-send:disabled{background:var(--surface-c-highest); color:var(--on-surface-variant); opacity:.6}
     .ch-send .ic{width:22px; height:22px}
-    .ch-clear{display:flex; justify-content:center}
+    .ch-top{display:flex; justify-content:flex-end; margin:4px 0}
+    .ch-note{align-self:center; max-width:90%; text-align:center; font-size:13px; line-height:18px; color:var(--on-surface-variant); margin:6px 0}
+    .ch-err{align-self:stretch; background:var(--error-container); color:var(--on-error-container); border-radius:12px; padding:12px 16px; font-size:14px; line-height:20px}
+    .ch-err button{margin-top:8px}
   </style>`));
 }
 
@@ -80,50 +83,61 @@ function mdToHtml(src) {
 }
 
 function bubble(role, text) {
+  if (role === "system_note") return el(`<div class="ch-note">${escHtml(text)}</div>`);
   const b = el(`<div class="ch-b ${role === "user" ? "ch-me" : "ch-ai"}"></div>`);
   if (role === "user") b.textContent = text;
   else b.innerHTML = mdToHtml(text);
   return b;
 }
 
-function save() { try { localStorage.setItem(LSK, JSON.stringify(msgs.slice(-40))); } catch (e) {} }
-function restore() { try { msgs = JSON.parse(localStorage.getItem(LSK)) || []; } catch (e) { msgs = []; } }
-
-export function renderChat(rootEl) {
-  injectStyles();
-  ROOT = rootEl;
-  if (!msgs.length) restore();
-  paint();
+async function loadHistory() {
+  try {
+    const r = await apiFetch("/api/earl/history");
+    const b = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(b.message || `HTTP ${r.status}`);
+    msgs = b.messages || [];
+    preNote = b.preConversation || null;
+    loadError = null;
+  } catch (e) {
+    loadError = e.message || "Couldn't load your conversation with Earl.";
+  }
+  loaded = true;
 }
 
-function paint() {
+export async function renderChat(rootEl) {
+  injectStyles();
+  ROOT = rootEl;
+  if (!loaded || loadError) { paint(true); await loadHistory(); }
+  paint(false);
+}
+
+function paint(loading) {
   ROOT.innerHTML = "";
-  setTabSub("chat", "Sees live sales, costs, inventory and the books");
+  setTabSub("chat", "Earl · knows your live numbers");
   const wrap = el(`<div class="ch-wrap"></div>`);
+  const top = el(`<div class="ch-top"><button class="btn text inline">${icon("check")}Action steps</button></div>`);
+  top.querySelector("button").onclick = openSteps;
+  wrap.appendChild(top);
   const list = el(`<div class="ch-msgs" role="log" aria-live="polite"></div>`);
 
-  if (!msgs.length) {
-    list.appendChild(el(`<div class="ch-b ch-ai">I can see both machines live, every sale, your costs, inventory, and the books.<br><br>Ask what to change, what's losing money, or what to buy.</div>`));
+  if (loading) list.appendChild(thinkingEl());
+  else if (loadError) {
+    const e = el(`<div class="ch-err"><b>Earl isn't available.</b><br>${escHtml(loadError)}<br><button class="btn outlined inline">Try again</button></div>`);
+    e.querySelector("button").onclick = async () => { paint(true); await loadHistory(); paint(false); };
+    list.appendChild(e);
+  } else {
+    if (!msgs.length) list.appendChild(el(`<div class="ch-note">This is Earl. He can see your live sales, costs, inventory, the loan and the books, and he remembers your conversations.</div>`));
+    msgs.forEach(m => list.appendChild(bubble(m.role, m.content)));
+    if (preNote && !sending) list.appendChild(el(`<div class="ch-note">Last time: ${escHtml(preNote)}</div>`));
   }
-  msgs.forEach(m => list.appendChild(bubble(m.role, m.content)));
   wrap.appendChild(list);
-  if (msgs.length) {
-    const clr = el(`<div class="ch-clear"><button class="btn text inline">Clear conversation</button></div>`);
-    clr.querySelector("button").onclick = async () => {
-      if (sending) return;
-      const ok = await confirmDialog({ title: "Clear this conversation?", body: "Messages are removed from this phone.", confirm: "Clear", danger: true });
-      if (!ok) return;
-      msgs = []; save(); paint(); snackbar("Conversation cleared");
-    };
-    wrap.appendChild(clr);
-  }
 
   let bar = document.querySelector(".ch-bar");
   if (bar) bar.remove();
   bar = el(`<div class="ch-bar"></div>`);
-  const ta = el(`<textarea rows="1" placeholder="Ask about the business" aria-label="Message"></textarea>`);
+  const ta = el(`<textarea rows="1" placeholder="Talk to Earl" aria-label="Message"></textarea>`);
   const btn = el(`<button class="ch-send" aria-label="Send" disabled>${icon("send")}</button>`);
-  const sync = () => { btn.disabled = sending || !ta.value.trim(); };
+  const sync = () => { btn.disabled = sending || loading || !!loadError || !ta.value.trim(); };
   ta.oninput = () => { ta.style.height = "auto"; ta.style.height = Math.min(140, ta.scrollHeight) + "px"; sync(); };
   ta.onkeydown = e => { if (e.key === "Enter" && !e.shiftKey && !matchMedia("(pointer:coarse)").matches) { e.preventDefault(); if (ta.value.trim()) send(ta.value.trim()); } };
   btn.onclick = () => { if (ta.value.trim()) send(ta.value.trim()); };
@@ -132,55 +146,104 @@ function paint() {
   ROOT.appendChild(wrap);
   ROOT._sync = sync;
   ROOT._list = list; ROOT._ta = ta; ROOT._btn = btn;
-  // If a reply is still in flight (tab was switched away and back), show it.
   if (sending) { btn.disabled = true; list.appendChild(thinkingEl()); }
   sync();
-  // Open at the BOTTOM of the feed (latest message). The section just un-hid, so
-  // wait for layout to settle before scrolling — double rAF + a fallback tick.
   const toBottom = () => window.scrollTo(0, document.body.scrollHeight);
   requestAnimationFrame(() => requestAnimationFrame(toBottom));
   setTimeout(toBottom, 60);
 }
 
 function thinkingEl() {
-  return el(`<div class="ch-think" aria-label="Thinking"><span class="ch-dot"></span><span class="ch-dot"></span><span class="ch-dot"></span></div>`);
+  return el(`<div class="ch-think" aria-label="Earl is thinking"><span class="ch-dot"></span><span class="ch-dot"></span><span class="ch-dot"></span></div>`);
 }
 
 async function send(text) {
-  if (sending) return;                 // one reply at a time — no double-sends
+  if (sending) return;
   sending = true;
   const list = ROOT._list, ta = ROOT._ta, btn = ROOT._btn;
-  if (!msgs.length) list.innerHTML = "";
+  list.querySelectorAll(".ch-note").forEach(n => n.remove());
+  preNote = null;
   msgs.push({ role: "user", content: text });
-  save();                              // persist the question immediately
   list.appendChild(bubble("user", text));
   ta.value = ""; ta.style.height = "auto"; btn.disabled = true;
   list.appendChild(thinkingEl());
   window.scrollTo(0, document.body.scrollHeight);
 
-  let reply = "";
+  let reply = null, failure = null;
   try {
-    const r = await apiFetch("/api/ask", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ messages: msgs.slice(-16) })
-    });
-    const b = await r.json();
-    reply = r.ok && b.reply ? b.reply : (b.message || "Something went wrong reaching the brain.");
+    const r = await apiFetch("/api/earl/message", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message: text }) });
+    const b = await r.json().catch(() => ({}));
+    if (r.ok && b.response) reply = b.response;
+    else failure = b.message || `Earl couldn't answer (HTTP ${r.status}).`;
   } catch (e) {
-    reply = "Couldn't reach the server. Try again in a moment.";
+    failure = "Couldn't reach the server. Your message wasn't sent.";
   }
-
-  msgs.push({ role: "assistant", content: reply });
-  save();
   sending = false;
-  // Only touch the DOM if this chat view is still on screen. If the tab was
-  // switched away, the reply is saved and paint() shows it on reopen — it isn't
-  // appended to a detached, invisible list (the old lost-reply bug).
+  if (reply) msgs.push({ role: "assistant", content: reply });
+
   const listNow = ROOT && ROOT._list;
   if (listNow && listNow.isConnected) {
     listNow.querySelectorAll(".ch-think").forEach(t => t.remove());
-    listNow.appendChild(bubble("assistant", reply));
+    if (reply) listNow.appendChild(bubble("assistant", reply));
+    else {
+      const e = el(`<div class="ch-err">${escHtml(failure)}<br><button class="btn outlined inline">Send again</button></div>`);
+      e.querySelector("button").onclick = () => { e.remove(); msgs.pop(); listNow.lastElementChild && listNow.lastElementChild.classList.contains("ch-me") && listNow.lastElementChild.remove(); send(text); };
+      listNow.appendChild(e);
+    }
     if (ROOT._sync) ROOT._sync();
     window.scrollTo(0, document.body.scrollHeight);
+  } else if (failure) snackbar(failure);
+}
+
+// ---------- action steps (Earl saves these when you commit to something) ----------
+async function openSteps() {
+  const body = el(`<div><div class="ch-think" style="margin:16px auto"><span class="ch-dot"></span><span class="ch-dot"></span><span class="ch-dot"></span></div></div>`);
+  const sh = sheet({ title: "Action steps", sub: "What you told Earl you'd do", body, full: true });
+  let data;
+  try {
+    const r = await apiFetch("/api/earl/action-steps");
+    data = await r.json();
+    if (!r.ok) throw new Error(data.message || `HTTP ${r.status}`);
+  } catch (e) {
+    body.innerHTML = `<div class="ch-err">Couldn't load action steps: ${escHtml(e.message)}</div>`;
+    return;
   }
+  const draw = () => {
+    body.innerHTML = "";
+    const section = (title, steps, open) => {
+      if (!steps.length) return;
+      body.appendChild(el(`<h2 class="sec-h">${escHtml(title)}</h2>`));
+      const rows = el(`<div class="rows"></div>`);
+      steps.forEach(s => {
+        const row = el(`<div class="row"><div class="nm">${escHtml(s.step_text)}<div class="mt">${new Date(s.created_at).toLocaleDateString([], { month: "short", day: "numeric" })}${s.target_date ? ` · by ${escHtml(s.target_date)}` : ""}</div></div></div>`);
+        if (open) {
+          const done = el(`<button class="icon-btn" aria-label="Mark done">${icon("check")}</button>`);
+          done.onclick = () => setStatus(s, "completed");
+          row.appendChild(done);
+        } else {
+          const undo = el(`<button class="btn text inline">Reopen</button>`);
+          undo.onclick = () => setStatus(s, "active");
+          row.appendChild(undo);
+        }
+        rows.appendChild(row);
+      });
+      body.appendChild(rows);
+    };
+    if (!data.active.length && !data.completed.length && !(data.did_not_happen || []).length) body.appendChild(el(`<div class="empty">No action steps yet. When you tell Earl you'll do something, he saves it here.</div>`));
+    section("Open", data.active, true);
+    section("Done", data.completed, false);
+    section("Didn't happen", data.did_not_happen || [], false);
+  };
+  const setStatus = async (s, status) => {
+    try {
+      const r = await apiFetch(`/api/earl/action-steps/${s.id}/status`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status }) });
+      const b = await r.json();
+      if (!r.ok) throw new Error(b.message || `HTTP ${r.status}`);
+      for (const k of ["active", "completed", "did_not_happen"]) data[k] = (data[k] || []).filter(x => x.id !== s.id);
+      (data[status] ||= []).unshift(b.step);
+      draw();
+      snackbar(status === "completed" ? "Marked done" : "Reopened");
+    } catch (e) { snackbar("Couldn't update: " + e.message); }
+  };
+  draw();
 }

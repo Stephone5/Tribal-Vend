@@ -6,7 +6,9 @@ import "dotenv/config";
 import express from "express";
 import path from "path";
 import { fileURLToPath } from "url";
-import { runBrain, askBrain } from "./brain.js";
+import { runBrain, askContext } from "./brain.js";
+import { mountEarl } from "./earl/route.js";
+import { startMemoryWorker } from "./earl/memory/worker.js";
 import { writeOnHand, getMachineLive } from "./airvend.js";
 import { costFor, costInfo, setCostOverrides, categoryFor, seasonCategoryFor, SOLD_BY_SLOT, SALES_WINDOW, MONTHLY, FIXED_COSTS, buildPL, INVENTORY_PURCHASES, INVENTORY_ON_HAND_MAY26, PURCHASE_DATA_THROUGH } from "./catalog.js";
 import { CLOSET_SEED } from "./closet-seed.js";
@@ -396,22 +398,18 @@ app.put("/api/costs", async (req, res) => {
   }
 });
 
-// ---- Ask: talk to the brain with the whole business in context ----
-app.post("/api/ask", rateLimit(20, 60 * 1000), async (req, res) => {
-  if (!process.env.ANTHROPIC_API_KEY) {
-    return res.status(503).json({ error: "no_key", message: "The brain isn't connected — no API key on the server." });
-  }
-  try {
+// ---- Earl (the Ask tab): the Bridge's mentor, copied into this app ----
+// His own Supabase database holds conversation and memory; the live numbers
+// below are handed to him on every message.
+mountEarl(app, {
+  rateLimit,
+  getBusinessData: async () => {
     const [live, closet] = await Promise.all([
       (liveCache.data && Date.now() - liveCache.at < INV_TTL) ? liveCache.data : buildLive().then(d => { liveCache = { at: Date.now(), data: d }; return d; }),
       getDoc(CLOSET_KEY).catch(() => null),
     ]);
-    const reply = await askBrain(req.body?.messages || [], live, closet);
-    res.json({ reply });
-  } catch (err) {
-    console.error("ask error:", err?.message || err);
-    res.status(502).json({ error: "ask_failed", message: err?.message || "The brain hit an error." });
-  }
+    return askContext(live, closet);
+  },
 });
 
 // Closet (inventory) — durable, synced across devices.
@@ -596,4 +594,5 @@ app.listen(port, () => {
   console.log(`Tribal Vend on http://localhost:${port} — ${ready}`);
   // Warm the cache on startup so the first real open is instant.
   loadCostOverrides().then(() => refreshLive()).catch(() => {});
+  startMemoryWorker();
 });

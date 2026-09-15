@@ -91,7 +91,7 @@ Using the data:
 - For cash questions, NET is a profit figure. Cash is: last bank balance, plus money left after product each month, minus the cash money-out figure each month. Say which months you counted.
 - Selling weeks run Tuesday through Monday.`;
 
-function askContext(live, closet) {
+export function askContext(live, closet) {
   const lines = [];
   const S = live?.sales;
   if (S) {
