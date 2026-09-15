@@ -196,13 +196,17 @@ export async function writeOnHand(machineId, missingBySlot = {}, { dryRun = true
   // Proof, not trust: read AirVend back and check every slot actually took.
   const after = await getForm(cookie, machineId);
   const nowBySlot = Object.fromEntries(after.slots.map(s => [s.key, s.onHand]));
-  const mismatched = plan.filter(p => Number(nowBySlot[p.slot]) !== Number(p.to))
-    .map(p => ({ ...p, airvendNow: nowBySlot[p.slot] }));
-  if (mismatched.length) {
-    const list = mismatched.slice(0, 8).map(m => `slot ${m.slot} is ${m.airvendNow}, expected ${m.to}`).join("; ");
-    throw new Error(`AirVend accepted the form but ${mismatched.length} slot${mismatched.length === 1 ? "" : "s"} didn't update: ${list}.`);
+  const diffs = plan.map(p => ({ ...p, airvendNow: Number(nowBySlot[p.slot]) })).filter(p => p.airvendNow !== Number(p.to));
+  // Lower than entered = a sale landed between the save and this check (the
+  // machine keeps selling while you finish up). That's not a failed save.
+  const soldSince = diffs.filter(p => p.airvendNow < Number(p.to));
+  const failed = diffs.filter(p => !(p.airvendNow < Number(p.to)));
+  if (failed.length) {
+    const list = failed.slice(0, 8).map(m => `slot ${m.slot} is ${m.airvendNow}, you entered ${m.to}`).join("; ");
+    throw new Error(`AirVend accepted the form but ${failed.length} slot${failed.length === 1 ? "" : "s"} didn't update: ${list}.`);
   }
-  return { dryRun: false, machineId, wrote: plan.length, verified: true, refillDate, plan };
+  return { dryRun: false, machineId, wrote: plan.length, verified: true, refillDate, plan,
+    soldSince: soldSince.map(p => ({ slot: p.slot, product: p.product, entered: Number(p.to), now: p.airvendNow })) };
 }
 
 // Current time in AirVend's format ("M/d/yyyy h:mm AM"), Central time — the machines are in Oklahoma.
