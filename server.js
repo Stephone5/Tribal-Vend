@@ -404,16 +404,30 @@ async function loadCloset() {
   // One-time: add the OK fridge-machine Sam's Club buys (order 1045 3481 805,
   // picked up Aug 31, plus the Sep 1/4/5 deliveries). Every line was Qty 1 at the
   // price actually paid. Adds onto matching items; new items created. Runs once.
+  // Correction: inventory = exactly the Sam's order, from zero. The first pass
+  // added onto old PA counts (e.g. AriZona 20 + 24 = 44). Only runs if nobody
+  // has recounted since (a save moves countedAt off Aug 31).
+  if ((await getDoc(OK_BUY_KEY).catch(() => null)) && !(await getDoc(OK_EXACT_KEY).catch(() => null))
+      && doc.countedAt === "2026-08-31") {
+    const items = doc.items || [];
+    items.forEach(i => { i.qty = 0; });
+    for (const b of OK_BUY_0831) {
+      const hit = items.find(i => i.id === b.id) || items.find(i => b.match.includes(String(i.name).trim().toLowerCase()));
+      if (hit) hit.qty = b.units;
+    }
+    await setDoc(CLOSET_KEY, doc);
+    await setDoc(OK_EXACT_KEY, new Date().toISOString());
+  }
   const nissin = (doc.items || []).find(i => i.id === "OK0831-01");
   if (nissin && nissin.folder !== "Cold Food") { nissin.folder = "Cold Food"; await setDoc(CLOSET_KEY, doc); }
   if (!(await getDoc(OK_BUY_KEY).catch(() => null))) {
     const items = doc.items || (doc.items = []);
     // Stephen: snacks and candy are at zero now (only the fridge machine is running).
-    items.forEach(i => { if (i.folder === "Snacks" || i.folder === "Candy") i.qty = 0; });
+    items.forEach(i => { i.qty = 0; }); // from scratch: only what's on the order
     for (const b of OK_BUY_0831) {
       const hit = items.find(i => b.match.includes(String(i.name).trim().toLowerCase()));
       const unit = +(b.paid / b.units).toFixed(2);
-      if (hit) { hit.qty = (Number(hit.qty) || 0) + b.units; hit.price = unit; if (b.rename) hit.name = b.rename; }
+      if (hit) { hit.qty = b.units; hit.price = unit; if (b.rename) hit.name = b.rename; }
       else items.push({ id: b.id, folder: b.folder, name: b.name, price: unit, qty: b.units, min: 0, img: null });
     }
     if (!doc.countedAt || doc.countedAt < "2026-08-31") doc.countedAt = "2026-08-31";
@@ -424,6 +438,7 @@ async function loadCloset() {
 }
 
 const OK_BUY_KEY = "closet:okbuy-2026-08-31";
+const OK_EXACT_KEY = "closet:okbuy-exact-2026-08-31";
 const OK_BUY_0831 = [
   { id: "OK0831-01", folder: "Cold Food", name: "Nissin Chow Mein",      match: ["nissin chow mein"], units: 8,  paid: 9.97 },
   { id: "OK0831-02", folder: "Cold Food", name: "Hot Pockets",           match: ["hot pockets"], units: 20, paid: 14.88 },
