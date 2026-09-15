@@ -37,7 +37,6 @@ function showTab(tab, { fromBack = false } = {}) {
   current = tab;
   $("#abTitle").textContent = TABS[tab].title;
   setAppbarSub(getTabSub(tab));
-  $("#abRefresh").hidden = !TABS[tab].refresh;
   if (tab !== "closet") closetTabHidden();
   const fab = $("#fillFab"); if (fab) fab.hidden = tab !== "runs";
   // Render each tab once; after that switching is instant and keeps your place.
@@ -56,14 +55,6 @@ document.querySelectorAll("nav.navbar button").forEach(b => b.onclick = () => { 
 // app bar: tonal fill once content scrolls under it
 addEventListener("scroll", () => $("#appbar").classList.toggle("scrolled", scrollY > 4), { passive: true });
 
-// app bar refresh
-const abRefresh = $("#abRefresh");
-abRefresh.innerHTML = icon("refresh");
-abRefresh.onclick = async () => {
-  const fn = TABS[current].refresh; if (!fn || abRefresh.classList.contains("spin")) return;
-  abRefresh.classList.add("spin"); abRefresh.disabled = true;
-  try { await fn(); } finally { abRefresh.classList.remove("spin"); abRefresh.disabled = false; }
-};
 
 
 // ============================================================ restock
@@ -396,6 +387,5 @@ addEventListener("tv-update", () => {
 (async () => {
   await ensureUnlocked();
   rendered.add("company");
-  $("#abRefresh").hidden = false;
   renderCompany($("#company"));
 })();

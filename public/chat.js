@@ -2,7 +2,7 @@
 // and memory live in his own database on the server; this screen just shows it.
 
 import { apiFetch } from "./api.js";
-import { icon, setTabSub, confirmDialog, snackbar, sheet } from "./ui.js";
+import { icon, setTabSub, confirmDialog, snackbar, sheet, pullToRefresh } from "./ui.js";
 
 const el = h => { const t = document.createElement("template"); t.innerHTML = h.trim(); return t.content.firstChild; };
 
@@ -107,6 +107,7 @@ async function loadHistory() {
 export async function renderChat(rootEl) {
   injectStyles();
   ROOT = rootEl;
+  pullToRefresh(rootEl, async () => { if (sending) return; await loadHistory(); paint(false); });
   if (!loaded || loadError) { paint(true); await loadHistory(); }
   paint(false);
 }
