@@ -59,16 +59,18 @@ function popLayer(layer) {
 
 // ---------- bottom sheet ----------
 // sheet({ title, body: Node|string, actions: [{label, kind, onClick}], full, onClose })
-export function sheet({ title = "", sub = "", body, actions = [], full = false, onClose } = {}) {
+export function sheet({ title = "", sub = "", body, actions = [], full = false, onClose, info } = {}) {
   const scrim = el(`<div class="scrim"></div>`);
   const s = el(`<section class="sheet ${full ? "full" : ""}" role="dialog" aria-modal="true" aria-label="${esc(title)}">
     <div class="handle" aria-hidden="true"></div>
     ${title ? `<header class="sheet-h"><div><h2 class="t-title-l">${esc(title)}</h2>${sub ? `<p class="t-body-m muted">${esc(sub)}</p>` : ""}</div>
-      <button class="icon-btn" data-close aria-label="Close">${icon("close")}</button></header>` : ""}
+      <div class="sheet-h-actions">${info ? `<button class="icon-btn" data-info aria-label="What this means">${icon("info")}</button>` : ""}<button class="icon-btn" data-close aria-label="Close">${icon("close")}</button></div></header>` : ""}
     <div class="sheet-b"></div>
     ${actions.length ? `<footer class="sheet-f"></footer>` : ""}
   </section>`);
   const b = s.querySelector(".sheet-b");
+  const hd = s.querySelector(".sheet-h");
+  if (hd) b.addEventListener("scroll", () => hd.classList.toggle("lift", b.scrollTop > 0), { passive: true });
   if (typeof body === "string") b.innerHTML = body; else if (body) b.appendChild(body);
   const f = s.querySelector(".sheet-f");
   actions.forEach(a => {
@@ -91,6 +93,7 @@ export function sheet({ title = "", sub = "", body, actions = [], full = false, 
   document.addEventListener("keydown", onKey);
   scrim.onclick = close;
   s.querySelector("[data-close]") && (s.querySelector("[data-close]").onclick = close);
+  if (info) s.querySelector("[data-info]").onclick = () => confirmDialog({ title, body: info, confirm: "Got it", cancel: "" });
   // drag the handle down to dismiss
   let y0 = null;
   const handle = s.querySelector(".handle");

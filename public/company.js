@@ -1,23 +1,22 @@
-// Business view — the essentials up top, everything else behind "More".
-// Paints instantly from the last cached pull, then refreshes in the background.
+// Business view. A short screen of tappable cards; every card opens the detail.
+// Paints instantly from the last saved numbers, then keeps pulling until the
+// server has the newest data.
 
 import { apiFetch } from "./api.js";
 import { icon, sheet, confirmDialog, snackbar, pullToRefresh, expander, setTabSub, skel } from "./ui.js";
+import { mountChart, axes } from "./charts.js";
 
-const SVGNS = "http://www.w3.org/2000/svg";
 const el = h => { const t = document.createElement("template"); t.innerHTML = h.trim(); return t.content.firstChild; };
 const money = n => (n < 0 ? "-$" : "$") + Math.abs(n).toLocaleString("en-US", { maximumFractionDigits: 0 });
 const money2 = n => (n < 0 ? "-$" : "$") + Math.abs(n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const pct = n => (n >= 0 ? "+" : "") + n.toFixed(0) + "%";
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const shortName = s => String(s || "").replace(/^(Meals|Drinks|Crackers)\s*[-:]\s*/i, "").replace(/\s*\d+(\.\d+)?\s*(oz|fl oz|ct|count|-Ounce|piece|pk).*$/i, "").replace(/,.*$/, "").trim().slice(0, 26);
+// The server stores them as UTC, so format in UTC to keep the clock AirVend shows.
+const when = iso => new Date(iso).toLocaleString([], { timeZone: "UTC", weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+const hourLabel = (iso, h) => new Date(new Date(iso).getTime() + h * 3600e3).toLocaleString([], { timeZone: "UTC", weekday: "short", hour: "numeric" });
 
 const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const parseMonth = m => { const [mo, yy] = String(m).split(" "); return { year: 2000 + (+yy), month: MON.indexOf(mo) }; };
-
-// Filter the P&L rows to a period. "Last month" = the most recent COMPLETE
-// calendar month; "This year" = year-to-date; "Last year" = the full prior
-// calendar year; "All time" = everything.
 function filterPL(pl, period) {
   const now = new Date(), y = now.getFullYear(), mi = now.getMonth();
   if (period === "all") return pl;
@@ -30,111 +29,51 @@ function filterPL(pl, period) {
   return pl;
 }
 
-const LIVE_LSK = "tv_live_cache_v2";
-const GROSS = 0.45;            // last-resort fallback only; break-even derives the real margin live from the P&L
-const EMP_RATE = 15, EMP_HRS = 4; // $/hr and hours/week for the "can I hire" math
-const EMP_MONTHLY = Math.round(EMP_RATE * EMP_HRS * 4.333);
+const LIVE_LSK = "tv_live_cache_v3";
+const FRESH_MS = 3 * 60 * 1000;   // numbers older than this get re-pulled
+const AUTO_MS = 5 * 60 * 1000;    // while Business is on screen
 
-// ---------- chart helpers ----------
-function svg(w, h) { const s = document.createElementNS(SVGNS, "svg"); s.setAttribute("class", "chart"); s.setAttribute("viewBox", `0 0 ${w} ${h}`); return s; }
-function ln(s, x1, y1, x2, y2, stroke, sw = 1) { const l = document.createElementNS(SVGNS, "line"); l.setAttribute("x1", x1); l.setAttribute("y1", y1); l.setAttribute("x2", x2); l.setAttribute("y2", y2); l.setAttribute("stroke", stroke); l.setAttribute("stroke-width", sw); s.appendChild(l); }
-function tx(s, x, y, str, o = {}) { const t = document.createElementNS(SVGNS, "text"); t.setAttribute("x", x); t.setAttribute("y", y); t.setAttribute("fill", o.fill || "var(--on-surface-variant)"); t.setAttribute("font-size", o.size || 12); t.setAttribute("text-anchor", o.anchor || "middle"); t.setAttribute("font-weight", o.weight || 500); t.setAttribute("font-variant-numeric", "tabular-nums"); t.textContent = str; s.appendChild(t); }
-function rect(s, x, y, w, h, fill, r = 3) { const p = document.createElementNS(SVGNS, "rect"); p.setAttribute("x", x); p.setAttribute("y", y); p.setAttribute("width", Math.max(0, w)); p.setAttribute("height", Math.max(0, h)); p.setAttribute("rx", r); p.setAttribute("fill", fill); s.appendChild(p); }
-function pathd(s, d, stroke, sw = 2, fill = "none") { const p = document.createElementNS(SVGNS, "path"); p.setAttribute("d", d); p.setAttribute("fill", fill); p.setAttribute("stroke", stroke); p.setAttribute("stroke-width", sw); p.setAttribute("stroke-linejoin", "round"); p.setAttribute("stroke-linecap", "round"); s.appendChild(p); return p; }
-function niceMax(v) { if (v <= 0) return 1; const p = Math.pow(10, Math.floor(Math.log10(v))); const n = v / p; return (n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10) * p; }
-
-function barChart(series, { fmt = money } = {}) {
-  const W = 340, H = 168, L = 2, R = 2, T = 18, B = 24;
-  const s = svg(W, H);
-  const vals = series.map(d => d.v);
-  const hi = niceMax(Math.max(...vals, 0) * 1.1), lo = Math.min(0, ...vals) * 1.1;
-  const iw = W - L - R, ih = H - T - B, yf = v => T + ih - ((v - lo) / (hi - lo || 1)) * ih;
-  for (let g = 0; g <= 2; g++) { const yv = lo + (hi - lo) * g / 2; const y = yf(yv); ln(s, L, y, W - R, y, "var(--line)"); if (g > 0) tx(s, L, y - 5, fmt(yv), { anchor: "start" }); }
-  const zero = yf(0); ln(s, L, zero, W - R, zero, "var(--muted)", 1);
-  const gw = iw / series.length, bw = Math.max(3, Math.min(14, gw - 4));
-  series.forEach((d, i) => { const x = L + i * gw + (gw - bw) / 2, y = d.v >= 0 ? yf(d.v) : zero; rect(s, x, y, bw, Math.abs(yf(d.v) - zero), d.v >= 0 ? "var(--s3)" : "var(--bad)", 3); });
-  [0, Math.floor(series.length / 2), series.length - 1].forEach(i => tx(s, L + i * gw + gw / 2, H - 5, series[i].m));
-  return s;
-}
-function lineChart(series, { color = "var(--s1)", avg = null } = {}) {
-  const W = 340, H = 168, L = 2, R = 2, T = 18, B = 24;
-  const s = svg(W, H);
-  const vals = series.map(d => d.v), hi = niceMax(Math.max(...vals) * 1.08);
-  const iw = W - L - R, ih = H - T - B, xf = i => L + (series.length === 1 ? iw / 2 : (i / (series.length - 1)) * iw), yf = v => T + ih - (v / (hi || 1)) * ih;
-  for (let g = 0; g <= 2; g++) { const yv = hi * g / 2; const y = yf(yv); ln(s, L, y, W - R, y, "var(--line)"); if (g > 0) tx(s, L, y - 5, money(yv), { anchor: "start" }); }
-  let d = `M ${xf(0)} ${yf(vals[0])}`; series.forEach((p, i) => d += ` L ${xf(i)} ${yf(p.v)}`);
-  pathd(s, d + ` L ${xf(series.length - 1)} ${yf(0)} L ${xf(0)} ${yf(0)} Z`, "none", 0, color).setAttribute("opacity", ".10");
-  pathd(s, d, color, 2);
-  if (avg) { let a = `M ${xf(0)} ${yf(avg[0])}`; avg.forEach((v, i) => a += ` L ${xf(i)} ${yf(v)}`); pathd(s, a, "var(--s2)", 1.5).setAttribute("stroke-dasharray", "4 3"); }
-  [0, Math.floor(series.length / 2), series.length - 1].forEach(i => tx(s, xf(i), H - 5, series[i].m));
-  return s;
-}
-function multiLineChart(rows, series) {
-  // rows: [{m, <key>:units, ...}] ; series: [{key,label,color}]
-  const W = 340, H = 180, L = 2, R = 2, T = 18, B = 24;
-  const s = svg(W, H);
-  const hi = niceMax(Math.max(...rows.flatMap(r => series.map(se => r[se.key] || 0)), 1) * 1.08);
-  const iw = W - L - R, ih = H - T - B;
-  const xf = i => L + (rows.length === 1 ? iw / 2 : (i / (rows.length - 1)) * iw), yf = v => T + ih - (v / hi) * ih;
-  for (let g = 0; g <= 2; g++) { const yv = hi * g / 2, y = yf(yv); ln(s, L, y, W - R, y, "var(--line)"); if (g > 0) tx(s, L, y - 5, String(Math.round(yv)), { anchor: "start" }); }
-  series.forEach(se => {
-    let d = "";
-    rows.forEach((r, i) => { d += `${i ? " L" : "M"} ${xf(i)} ${yf(r[se.key] || 0)}`; });
-    pathd(s, d, se.color, 2);
-  });
-  [0, Math.floor(rows.length / 2), rows.length - 1].forEach(i => tx(s, xf(i), H - 5, rows[i].m.slice(2)));
-  return s;
-}
-function groupChart(rows, aKey, bKey, aColor, bColor) {
-  const W = 340, H = 168, L = 2, R = 2, T = 18, B = 24;
-  const s = svg(W, H);
-  const hi = niceMax(Math.max(...rows.map(d => Math.max(d[aKey], d[bKey]))) * 1.1);
-  const iw = W - L - R, ih = H - T - B, yf = v => T + ih - (v / hi) * ih;
-  for (let g = 0; g <= 2; g++) { const yv = hi * g / 2; const y = yf(yv); ln(s, L, y, W - R, y, "var(--line)"); if (g > 0) tx(s, L, y - 5, money(yv), { anchor: "start" }); }
-  const gw = iw / rows.length, bw = Math.max(2, Math.min(8, (gw - 4) / 2));
-  rows.forEach((d, i) => { const cx = L + i * gw + gw / 2; rect(s, cx - bw - 1, yf(d[aKey]), bw, ih - (yf(d[aKey]) - T), aColor, 2); rect(s, cx + 1, yf(d[bKey]), bw, ih - (yf(d[bKey]) - T), bColor, 2); });
-  [0, Math.floor(rows.length / 2), rows.length - 1].forEach(i => tx(s, L + i * gw + gw / 2, H - 5, rows[i].m));
-  return s;
-}
-function hourChart(byHour) {
-  const W = 340, H = 150, L = 2, R = 2, T = 18, B = 24, s = svg(W, H);
-  const hi = niceMax(Math.max(...byHour) * 1.1), iw = W - L - R, ih = H - T - B, yf = v => T + ih - (v / (hi || 1)) * ih;
-  for (let g = 0; g <= 2; g++) { const yv = hi * g / 2; const y = yf(yv); ln(s, L, y, W - R, y, "var(--line)"); if (g > 0) tx(s, L, y - 5, money(yv), { anchor: "start" }); }
-  const gw = iw / 24, bw = Math.max(4, gw - 3);
-  byHour.forEach((v, h) => rect(s, L + h * gw + (gw - bw) / 2, yf(v), bw, ih - (yf(v) - T), v >= hi * 0.5 ? "var(--s1)" : "var(--s3)", 2));
-  [0, 6, 12, 18, 23].forEach(h => tx(s, L + h * gw + gw / 2, H - 5, h === 0 ? "12a" : h === 12 ? "12p" : h > 12 ? (h - 12) + "p" : h + "a"));
-  return s;
-}
-function barRow(label, value, max, color, fmtv = money2) {
-  const w = max > 0 ? Math.max(2, (Math.abs(value) / max) * 100) : 0;
-  return el(`<div class="bar-line"><span class="lbl">${esc(label)}</span><span class="track"><span class="fill" style="width:${w}%;background:${color}"></span></span><span class="amt" style="color:${value < 0 ? "var(--bad)" : "var(--ink)"}">${fmtv(value)}</span></div>`);
-}
-
-// ---------- entry: instant from cache, then refresh ----------
-let ROOT = null;
-const OPEN = new Set();   // sections you opened stay open when numbers refresh
+// ---------- entry ----------
+let ROOT = null, DATA = null, loadingNow = false, timer = null;
 export async function renderCompany(root) {
   ROOT = root;
   pullToRefresh(root, () => refreshCompany(root));
   let cached = null;
   try { cached = JSON.parse(localStorage.getItem(LIVE_LSK)); } catch {}
   if (cached) paint(root, cached, true);
-  else root.innerHTML = skeleton();
+  else root.innerHTML = `${skel(180, 16)}${skel(300, 16)}${skel(96, 12)}${skel(96, 12)}${skel(96, 12)}`;
   await load(root, false, !!cached);
+  if (!timer) {
+    timer = setInterval(() => { if (ROOT && ROOT.isConnected && !ROOT.closest("[hidden]") && document.visibilityState === "visible") load(ROOT, false, true); }, AUTO_MS);
+    document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible" && ROOT && DATA && Date.now() - DATA.at > FRESH_MS) load(ROOT, false, true); });
+  }
 }
-// Pull-to-refresh / app bar refresh: make the server re-read AirVend now.
 export async function refreshCompany(root) {
   ROOT = root;
   const ok = await load(root, true, true);
   snackbar(ok ? "Numbers updated" : "Couldn't refresh. Showing your last numbers.");
 }
-async function load(root, force, haveSomething) {
+// After a restock is sent: the server re-reads restock times; pull until it has.
+export function companyAfterRestock() { if (ROOT) load(ROOT, false, true, DATA ? DATA.at : Date.now()); }
+
+async function load(root, force, haveSomething, newerThan = 0) {
+  if (loadingNow && !force) return true;
+  loadingNow = true; setUpdating(root, true);
   try {
-    const r = await apiFetch("/api/live" + (force ? "?refresh=1" : ""));
-    if (!r.ok) throw new Error("HTTP " + r.status);
-    const d = await r.json();
-    try { localStorage.setItem(LIVE_LSK, JSON.stringify(d)); } catch {}
-    if (ROOT === root) paint(root, d, false);
+    // The server answers instantly with what it has and refreshes behind the
+    // scenes, so ask again a few times until the numbers are current.
+    for (let tries = 0; tries < 6; tries++) {
+      const r = await apiFetch("/api/live" + (force && tries === 0 ? "?refresh=1" : ""));
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      const d = await r.json();
+      const fresh = Date.now() - d.at < FRESH_MS && d.at > newerThan;
+      if (!DATA || d.at !== DATA.at) {
+        try { localStorage.setItem(LIVE_LSK, JSON.stringify(d)); } catch {}
+        if (ROOT === root) paint(root, d, !fresh);
+      }
+      if (fresh) break;
+      await new Promise(s => setTimeout(s, 5000));
+    }
     return true;
   } catch (e) {
     if (!haveSomething) {
@@ -142,178 +81,328 @@ async function load(root, force, haveSomething) {
       setTabSub("company", "Offline");
     }
     return false;
+  } finally {
+    loadingNow = false; setUpdating(root, false);
+    if (DATA) setTabSub("company", `Updated ${new Date(DATA.at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`);
   }
 }
-
-function skeleton() {
-  return `${skel(208, 16)}<div class="tiles" style="margin-top:0">${skel(96, 12)}${skel(96, 12)}</div>${skel(240, 12)}`;
+function setUpdating(root, on) {
+  root.querySelectorAll("[data-live]").forEach(n => n.classList.toggle("updating", on));
+  if (on) setTabSub("company", "Updating…");
 }
 
 // ---------- paint ----------
 function paint(root, d, stale) {
-  const scrollY = window.scrollY;
+  DATA = d;
+  const y = window.scrollY;
   root.innerHTML = "";
-  setTabSub("company", stale ? "Updating…" : `Updated ${new Date(d.at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}${d.sales ? ` · ${d.sales.txnCount.toLocaleString()} sales` : ""}`);
-
   healthBanners(root, d);
+  root.appendChild(restockHero(d));
+  if (d.sales && d.sales.weeks && d.sales.weeks.length) root.appendChild(weeklyCard(d));
 
-  const allSlots = d.machines.flatMap(m => m.slots.map(s => ({ ...s, machine: m.name })));
-  const known = allSlots.filter(s => s.cost != null);
-  const S = d.sales;
+  root.appendChild(el(`<h2 class="sec-h">The money</h2>`));
   const pl = d.pl || [];
-  window.__fixedCosts = d.fixedCosts || [];
-
-  // ===================== SECTION 1 · THIS WEEK =====================
-  root.appendChild(sectionLabel("This week"));
-
-  const wkP = S ? S.thisWeek.profit : 0, wkR = S ? S.thisWeek.revenue : 0, wkU = S ? S.thisWeek.units : 0;
-  const lwR = S ? S.lastWeek.revenue : 0;
-  // Pace = how far into THIS week we are (0→1), from the real week start —
-  // so the vs-last-week compare is apples to apples no matter the day.
-  const elapsed = S ? Math.min(1, Math.max(0.03, (Date.now() - new Date(S.weekStart).getTime()) / (7 * 864e5))) : 1;
-  const lwSoFar = lwR * elapsed;
-  const wkDelta = lwSoFar > 0 ? ((wkR - lwSoFar) / lwSoFar) * 100 : 0;
-
-  root.appendChild(el(`<div class="hero">
-    <div class="k">Sales this week</div>
-    <div class="v">${money2(wkR)}</div>
-    <div class="sub"><b>${money2(wkP)}</b> profit · ${wkU} units · resets Mon midnight</div>
-    <div class="delta">${pct(wkDelta)} vs this point last week</div>
-    <div class="chips">
-      <span class="chip"><span>Last week</span><b>${money(lwR)}</b></span>
-      <span class="chip"><span>Empty now</span><b>${allSlots.filter(s => s.onHand === 0).length}</b></span>
-      <span class="chip"><span>Avg fill</span><b>${Math.round(allSlots.reduce((a, s) => a + s.fillPct, 0) / (allSlots.length || 1))}%</b></span>
-    </div>
-  </div>`));
-
-  if (S) {
-    const c = el(`<div class="card"><div class="ct">Weekly profit</div><div class="cs">Weeks run Tuesday through Monday · this week is still filling in</div></div>`);
-    c.appendChild(barChart(S.weeks.slice(-14).map(w => ({ m: new Date(w.w).toLocaleDateString([], { month: "numeric", day: "numeric" }), v: Math.round(w.profit) }))));
-    root.appendChild(c);
-  }
-
-  // ===================== SECTION 2 · THE MONEY =====================
-  root.appendChild(sectionLabel("The money"));
-
   if (pl.length) {
-    const ytd = filterPL(pl, "ytd"), ytdNet = ytd.reduce((a, p) => a + p.net, 0), ytdRev = ytd.reduce((a, p) => a + p.revenue, 0);
-    root.appendChild(drill("pl", "Profit & loss", `<span class="num">${money(ytdNet)}</span> kept this year on <span class="num">${money(ytdRev)}</span> in sales`, () => { const w = plSection(pl); w.prepend(bankFeedBanner()); return w; }));
+    const ytd = filterPL(pl, "ytd"), net = ytd.reduce((a, p) => a + p.net, 0), rev = ytd.reduce((a, p) => a + p.revenue, 0);
+    root.appendChild(tapCard("Profit & loss", money(net), `kept this year on ${money(rev)} in sales`, () => plSheet(d)));
   }
-  if (d.balanceSheet) root.appendChild(drill("bs", "Balance sheet", `Net worth <span class="num">${money(d.balanceSheet.equity)}</span>`, () => balanceSheetCard(d.balanceSheet)));
-  if (d.inventoryLoss) root.appendChild(drill("loss", "Inventory loss", `<span class="num" style="color:var(--error)">${money(d.inventoryLoss.loss)}</span> lost · ${d.inventoryLoss.lossPct.toFixed(1)}% of what you bought`, () => lossCard(d.inventoryLoss)));
-  if (pl.length && d.balanceSheet && d.loan) root.appendChild(drill("cash", "Why profit isn't in the bank", "Where the money went", () => cashBridgeCard(d, pl)));
-
-  // Loan
-  if (d.loan) root.appendChild(drill("loan", "Wendle loan", `<span class="num">${money(d.loan.balance)}</span> owed · paid off ${new Date(d.loan.payoffDate + "T12:00:00").toLocaleDateString([], { month: "short", year: "numeric" })}`, () => {
-    const wrap = el(`<div></div>`);
-    const L = d.loan, payoff = new Date(L.payoffDate + "T12:00:00");
-    const lc = el(`<div class="card"><div class="ct">Wendle loan</div><div class="cs">$13,000 at 10% · ${money2(L.payment)}/mo · payment ${L.monthNumber} of 93</div></div>`);
-    lc.appendChild(el(`<div style="margin:4px 2px 2px">
-      <div style="display:flex;justify-content:space-between;align-items:baseline">
-        <span style="font-size:27px;font-weight:800;letter-spacing:-.02em">${money(L.balance)}</span>
-        <span style="font-size:12px;color:var(--muted)">still owed</span></div>
-      <div style="height:10px;background:var(--surface-2);border-radius:99px;overflow:hidden;margin:11px 0 6px"><div style="height:100%;width:${L.pctPaid.toFixed(1)}%;background:var(--s3)"></div></div>
-      <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--muted)"><span>${L.pctPaid.toFixed(0)}% of principal paid</span><span>${L.paymentsLeft} payments left</span></div>
-    </div>`));
-    const lr = el(`<div class="rows" style="margin-top:12px"></div>`);
-    lr.appendChild(el(`<div class="row"><div class="nm">Paid off</div><div class="val">${payoff.toLocaleDateString([], { month: "short", year: "numeric" })}</div></div>`));
-    lr.appendChild(el(`<div class="row"><div class="nm">Interest still to come</div><div class="val down">${money(L.interestLeft)}</div></div>`));
-    lc.appendChild(lr);
-    wrap.appendChild(lc);
-    if (L.overpayWarning > 0) wrap.appendChild(el(`<div class="note warn"><b>Stop after payment 93, not 96.</b> The schedule lists 96 but the balance hits zero at 93. Paying all 96 hands over about ${money(L.overpayWarning * L.payment)} you don't owe.</div>`));
-    return wrap;
-  }));
-
-  // Break-even + hire threshold. This is a CASH question — what you must clear
-  // to cover the bills — so it uses the whole loan payment, not just interest.
-  {
-    const opFixed = (d.fixedCosts || []).reduce((a, c) => a + c.amount, 0);
-    const loanPay = d.loan ? d.loan.payment : 0;
-    const fixed = opFixed + loanPay;
-    const recent = pl.slice(-3);
-    const recentRev = recent.length ? recent.reduce((a, p) => a + p.revenue, 0) / recent.length : 0;
-    // Margin is now LIVE, not a guess: real gross ÷ real revenue from the P&L,
-    // then knocked down by inventory shrinkage — the margin you actually keep.
-    const grossSum = pl.reduce((a, p) => a + p.gross, 0), revSum = pl.reduce((a, p) => a + p.revenue, 0);
-    const loss = d.inventoryLoss ? d.inventoryLoss.loss : 0;
-    const margin = revSum ? Math.max(0.05, (grossSum - loss) / revSum) : GROSS;
-    const breakeven = fixed / margin;
-    const hireNeed = (fixed + EMP_MONTHLY) / margin;
-    const gap = hireNeed - recentRev;
-    const beSub = `Break even at <span class="num">${money(breakeven)}</span>/mo · you average <span class="num">${money(recentRev)}</span>`;
-    root.appendChild(drill("be", "Break-even & hiring", beSub, () => {
-    const bc = el(`<div class="card"><div class="ct">Break-even &amp; hiring</div><div class="cs">Averaging ${money(recentRev)}/mo · at your real ${Math.round(margin * 100)}% margin after shrinkage</div></div>`);
-    const rows = el(`<div class="rows"></div>`);
-    rows.appendChild(el(`<div class="row"><div class="nm">Just to break even<div class="mt">cover ${money(fixed)}/mo — bills + the ${money(loanPay)} loan payment</div></div><div class="val ${recentRev >= breakeven ? "up" : "down"}">${money(breakeven)}</div></div>`));
-    rows.appendChild(el(`<div class="row"><div class="nm">To afford a helper<div class="mt">$${EMP_RATE}/hr, ~${EMP_HRS} hrs/wk on the route (${money(EMP_MONTHLY)}/mo)</div></div><div class="val">${money(hireNeed)}</div></div>`));
-    bc.appendChild(rows);
-    bc.appendChild(el(`<div class="note ${gap <= 0 ? "good" : ""}">${gap <= 0
-      ? `<b>You can afford the helper.</b> You're clearing the ${money(hireNeed)} bar by about ${money(-gap)}/month.`
-      : `<b>${money(gap)}/month more in sales</b> and a $${EMP_RATE}/hr helper pays for itself, roughly one more machine's worth.`}</div>`));
-    return bc;
-    }));
+  if (d.balanceSheet) {
+    const L = d.loan || {};
+    root.appendChild(tapCard("Balance sheet", money(d.balanceSheet.assets), `owned · ${money(L.balance || 0)} left on the loan${L.payoffMonth ? `, last payment ${L.payoffMonth}` : ""}`, () => balanceSheet(d)));
   }
+  if (d.inventoryLoss) root.appendChild(tapCard("Inventory loss", money(d.inventoryLoss.loss), `lost · ${d.inventoryLoss.lossPct.toFixed(1)}% of what you bought`, () => lossSheet(d.inventoryLoss), true));
 
-  // ===================== SECTION 3 · YOUR PRODUCTS =====================
-  root.appendChild(sectionLabel("Your products"));
+  productRows(root, d);
 
-  // aggregate by product for the earner/laggard views
-  const byProd = {};
-  known.forEach(s => { const k = shortName(s.product); if (!byProd[k]) byProd[k] = { profit: 0, units: 0, perDay: 0 }; byProd[k].profit += s.profit; byProd[k].units += s.units; byProd[k].perDay += s.perDay; });
-  const prods = Object.entries(byProd).map(([k, v]) => ({ k, ...v })).sort((a, b) => b.perDay - a.perDay);
-
-  const top = prods.slice(0, 10), maxPD = Math.max(...top.map(p => p.perDay), 0.01);
-  const tc = el(`<div class="card"><div class="ct">Top earners</div><div class="cs">Profit per day at today's prices</div></div>`);
-  top.forEach(p => tc.appendChild(barRow(p.k, p.perDay, maxPD, "var(--s1)", v => "$" + v.toFixed(2) + "/day")));
-  root.appendChild(tc);
-
-  // sold out — losing sales
-  const soldOut = known.filter(s => s.stockedOut && s.units > 0).sort((a, b) => b.unitsPerDay - a.unitsPerDay);
-  if (soldOut.length) root.appendChild(drill("soldout", "Sold out, losing sales", `${soldOut.length} slot${soldOut.length === 1 ? "" : "s"} ran empty before you got back`, () => {
-    const so = el(`<div class="card"><div class="ct">Sold out</div><div class="cs">Right column: how many days a full slot lasts</div></div>`);
-    const rr = el(`<div class="rows"></div>`);
-    soldOut.forEach(s => rr.appendChild(el(`<div class="row"><div class="nm">${esc(shortName(s.product))}<div class="mt">${esc(s.machine)} · slot ${s.slot} · sells ${s.unitsPerDay.toFixed(2)}/day · par ${s.max}</div></div><div class="val">${(s.max / Math.max(s.unitsPerDay, .01)).toFixed(1)} days</div></div>`)));
-    so.appendChild(rr); return so;
-  }));
-
-  // below cost
-  const below = known.filter(s => s.belowCost);
-  if (below.length) root.appendChild(drill("below", "Priced at or below cost", `<span style="color:var(--error)">${below.length} product${below.length === 1 ? "" : "s"}</span> lose money on every sale`, () => {
-    const bc = el(`<div class="card"><div class="ct">Priced at or below cost</div><div class="cs">Tap one to fix its cost, or raise the price in AirVend</div></div>`);
-    const rr = el(`<div class="rows"></div>`);
-    below.forEach(s => { const row = el(`<div class="row tap"><div class="nm">${esc(shortName(s.product))}<div class="mt">slot ${s.slot} · costs ${money2(s.cost)} · sells ${money2(s.price)}</div></div><div class="val down">${money2(s.marginEach)}</div></div>`); row.onclick = () => editCost({ product: s.product, price: s.price, cost: s.cost }, root); rr.appendChild(row); });
-    bc.appendChild(rr); return bc;
-  }));
-
-  // slowest slots (replaces "running low")
-  const slow = prods.filter(p => p.units > 0).slice(-6).reverse();
-  if (slow.length) root.appendChild(drill("slow", "Slowest slots", "Least profit per day, candidates to swap out", () => {
-    const sc = el(`<div class="card"><div class="ct">Slowest slots</div><div class="cs">Least profit per day</div></div>`);
-    const maxS = Math.max(...slow.map(p => Math.abs(p.perDay)), 0.01);
-    slow.forEach(p => sc.appendChild(barRow(p.k, p.perDay, maxS, "var(--s4)", v => "$" + v.toFixed(2) + "/day")));
-    return sc;
-  }));
-
-  // ===================== SALES TAX (subtle, collapsed) =====================
-  if (d.salesTax) root.appendChild(salesTaxCard(d.salesTax));
-
-  // ===================== MORE (collapsible) =====================
-  root.appendChild(moreSection(d, allSlots, known, S, pl));
-
-  // Deliberate, rare full re-read of AirVend (confirmed in a dialog).
-  root.appendChild(airvendResyncButton());
-
-  window.scrollTo(0, scrollY);
-}
-
-// ---- deliberate "re-read everything from AirVend" (double-confirm) ----
-function airvendResyncButton() {
   const wrap = el(`<div style="display:flex;justify-content:center;margin-top:24px"></div>`);
   const b = el(`<button class="btn text inline">${icon("refresh")}Re-read everything from AirVend</button>`);
-  b.onclick = confirmResync;
-  wrap.appendChild(b);
-  return wrap;
+  b.onclick = confirmResync; wrap.appendChild(b); root.appendChild(wrap);
+
+  setTabSub("company", stale ? "Updating…" : `Updated ${new Date(d.at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`);
+  window.scrollTo(0, y);
 }
+
+function tapCard(title, value, sub, open, bad) {
+  const c = el(`<button class="card tapcard" data-live>
+    <div class="ct">${esc(title)}</div>
+    <div class="money-v" ${bad ? 'style="color:var(--error)"' : ""}>${esc(value)}</div>
+    <div class="money-s">${esc(sub)}</div>
+    ${icon("chevron", "chev")}
+  </button>`);
+  c.onclick = open;
+  return c;
+}
+
+// ---------- 1. sales since the last restock ----------
+function restockHero(d) {
+  const R = d.restock;
+  if (!R || R.error) {
+    const msg = R && R.error ? `Couldn't read restock times from AirVend: ${R.error}` : "No machine was restocked in the last 21 days.";
+    return el(`<div class="hero" data-live><div class="k">Sales since restock</div><div class="sub" style="margin-top:8px">${esc(msg)}</div></div>`);
+  }
+  const cmp = R.pct == null
+    ? "No earlier restocks to compare yet"
+    : `${R.pct >= 0 ? "+" : ""}${R.pct.toFixed(0)}% vs your last ${R.priorCount} restocks at this point`;
+  const h = el(`<button class="hero" data-live aria-label="Sales since restock, open the chart">
+    <div class="k">Since restock · ${esc(when(R.restockedAt))}</div>
+    <div class="v">${money2(R.revenue)}</div>
+    <div class="row2"><b>${money2(R.profit)}</b><span>net profit</span></div>
+    <div class="delta">${esc(cmp)}</div>
+  </button>`);
+  h.onclick = () => restockSheet(R);
+  return h;
+}
+
+function restockSheet(R) {
+  const body = el(`<div></div>`);
+  R.machines.forEach(m => {
+    const c = el(`<div class="card"><div class="ct">${esc(m.name)}</div><div class="cs">Restocked ${esc(when(m.restockedAt))} · ${m.units} sold</div><div></div></div>`);
+    const labels = m.curve.map(p => hourLabel(m.restockedAt, p.h));
+    const last = m.curve.length - 1;
+    mountChart(c.lastChild, pal => ({
+      ...axes(pal, labels),
+      series: [
+        { name: "This restock", type: "line", data: m.curve.map(p => p.c), showSymbol: false, smooth: .2, lineStyle: { width: 3, color: pal.primary }, areaStyle: { color: pal.primary, opacity: .12 } },
+        ...(m.avg != null ? [{ name: "Average", type: "line", data: m.curve.map(p => p.a), showSymbol: false, smooth: .2, lineStyle: { width: 2, type: "dashed", color: pal.muted } }] : []),
+      ],
+    }), {
+      height: 220, initial: last,
+      readout: i => { const p = m.curve[i]; if (!p) return ""; const hrs = p.h;
+        return `<b>${money2(p.c)}</b><span class="k"><i style="background:var(--primary)"></i>${esc(hourLabel(m.restockedAt, hrs))} · ${hrs < 48 ? Math.round(hrs * 10) / 10 + " hr" : (hrs / 24).toFixed(1) + " days"} in</span>${p.a != null ? `<span class="k"><i style="background:var(--on-surface-variant)"></i>avg ${money2(p.a)}</span>` : ""}`; },
+    });
+    body.appendChild(c);
+    if (m.prior.length) {
+      const pc = el(`<div class="card"><div class="ct">Earlier restocks</div><div class="cs">Sales in the same amount of time after each one</div><div class="rows"></div></div>`);
+      const rows = pc.querySelector(".rows");
+      rows.appendChild(el(`<div class="row"><div class="nm"><b>This restock</b><div class="mt">${esc(when(m.restockedAt))}</div></div><div class="val">${money2(m.revenue)}</div></div>`));
+      m.prior.forEach(p => rows.appendChild(el(`<div class="row"><div class="nm">${esc(when(p.at))}<div class="mt">${p.units} sold · ${money2(p.profit)} profit</div></div><div class="val">${money2(p.revenue)}</div></div>`)));
+      rows.appendChild(el(`<div class="row"><div class="nm">Average of those</div><div class="val">${money2(m.avg)}</div></div>`));
+      body.appendChild(pc);
+    }
+  });
+  sheet({
+    title: "Since your last restock", sub: `${money2(R.revenue)} sales · ${money2(R.profit)} net profit`, body, full: true,
+    info: "Counts every sale since your latest restock in AirVend. The percentage compares that to the same number of hours after each of your previous 4 restocks, whatever day they happened. It starts over each time you send a restock. A machine that hasn't been restocked in 21 days is left out.",
+  });
+}
+
+// ---------- 2. weekly profit ----------
+function weeklyCard(d) {
+  const S = d.sales;
+  const weeks = S.weeks.slice(-14);
+  const lab = w => new Date(w.w + "T12:00:00").toLocaleDateString([], { month: "numeric", day: "numeric" });
+  const c = el(`<div class="card" data-live><div class="ct">Weekly profit</div><div class="cs">Touch a bar to read it, tap it for that week's top sellers</div><div></div></div>`);
+  mountChart(c.lastChild, pal => ({
+    ...axes(pal, weeks.map(lab)),
+    series: [{ type: "bar", data: weeks.map((w, i) => ({ value: +w.profit.toFixed(2), itemStyle: { color: i === weeks.length - 1 ? pal.tertiary : pal.primary, borderRadius: [4, 4, 0, 0] } })), barMaxWidth: 18 }],
+  }), {
+    height: 200, initial: weeks.length - 1,
+    readout: i => { const w = weeks[i]; if (!w) return ""; return `<b>${money2(w.profit)} profit</b>Week of ${lab(w)}${i === weeks.length - 1 ? " (still going)" : ""} · ${money2(w.revenue)} sales · ${w.units} sold`; },
+    onTap: i => weekSheet(weeks[i], (S.weekTop || {})[weeks[i].w] || [], lab(weeks[i])),
+  });
+  return c;
+}
+function weekSheet(w, top, label) {
+  const body = el(`<div class="rows"></div>`);
+  if (!top.length) body.appendChild(el(`<div class="empty">No sales that week.</div>`));
+  top.forEach((t, i) => body.appendChild(el(`<div class="row"><div class="nm">${i + 1}. ${esc(String(t.item).replace(/^(Meals|Drinks|Crackers)s*[-:]s*/i, ""))}<div class="mt">${t.units} sold · ${money2(t.profit)} profit</div></div><div class="val">${money2(t.revenue)}</div></div>`)));
+  sheet({ title: `Week of ${label}`, sub: `${money2(w.revenue)} sales · ${money2(w.profit)} profit`, body });
+}
+
+// ---------- 3. profit & loss ----------
+function plSheet(d) {
+  const pl = d.pl || [];
+  const wrap = el(`<div></div>`);
+  const bar = el(`<div class="period-bar"></div>`);
+  const host = el(`<div></div>`);
+  const periods = [["lastmonth", "Last month"], ["ytd", "This year"], ["lastyear", "Last year"], ["all", "All time"]];
+  let cur = "ytd";
+  const draw = () => {
+    host.innerHTML = "";
+    const rows = filterPL(pl, cur), label = periods.find(p => p[0] === cur)[1];
+    if (!rows.length) host.appendChild(el(`<div class="empty">No sales on record for ${label.toLowerCase()} yet.</div>`));
+    else {
+      if (rows.length > 1) {
+        const cc = el(`<div class="card"><div class="ct">Net profit by month</div><div></div></div>`);
+        mountChart(cc.lastChild, pal => ({
+          ...axes(pal, rows.map(p => p.m)),
+          series: [{ type: "bar", barMaxWidth: 22, data: rows.map(p => ({ value: Math.round(p.net), itemStyle: { color: p.net >= 0 ? pal.primary : pal.bad, borderRadius: 4 } })) }],
+        }), {
+          height: 190, initial: rows.length - 1,
+          readout: i => { const p = rows[i]; return p ? `<b>${money2(p.net)} net</b>${esc(p.m)} · ${money(p.revenue)} sales · ${money(p.gross)} after product` : ""; },
+        });
+        host.appendChild(cc);
+      }
+      host.appendChild(plCard(rows, label, d));
+    }
+    [...bar.children].forEach((b, i) => b.classList.toggle("on", periods[i][0] === cur));
+  };
+  periods.forEach(([k, lab]) => { const b = el(`<button class="period-btn">${lab}</button>`); b.onclick = () => { cur = k; draw(); }; bar.appendChild(b); });
+  wrap.append(bar, host);
+  draw();
+  if (d.salesTax) wrap.appendChild(salesTaxSection(d.salesTax));
+  sheet({
+    title: "Profit & loss", body: wrap, full: true,
+    info: "Sales count when they happen, and product cost is matched to what sold, the same way QuickBooks does it. Monthly bills use today's rates until the bank is connected.",
+  });
+}
+
+function plCard(pl, periodLabel, d) {
+  const N = pl.length;
+  const sum = k => pl.reduce((a, p) => a + (p[k] || 0), 0);
+  const sales = sum("revenue"), cogs = sum("cogs"), gross = sum("gross");
+  const loanInt = sum("loanInterest"), opFixed = sum("opFixed");
+  const expenses = opFixed + loanInt, net = gross - expenses;
+  const span = N === 1 ? pl[0].m : `${pl[0].m} – ${pl[N - 1].m}`;
+  const opLines = (d.fixedCosts || []).map(c => ({ name: c.name, amt: c.amount * N }));
+  const c = el(`<div class="card"><div class="ct">Statement</div><div class="cs">${esc(periodLabel)} · ${esc(span)}</div></div>`);
+  const t = el(`<div class="qb"></div>`);
+  const grp = (label, val, bold) => el(`<div class="qb-h ${bold ? "b" : ""}"><span>${esc(label)}</span><span>${money2(val)}</span></div>`);
+  const line = (label, val, neg) => el(`<div class="qb-l"><span>${esc(label)}</span><span${neg ? ' class="neg"' : ""}>${neg ? "−" : ""}${money2(Math.abs(val))}</span></div>`);
+  t.appendChild(grp("Income", sales, true));
+  t.appendChild(line("Sales", sales));
+  t.appendChild(line("Cost of goods (product)", cogs, true));
+  t.appendChild(grp("Gross profit", gross, true));
+  t.appendChild(grp("Expenses", expenses, true));
+  opLines.forEach(l => t.appendChild(line(l.name, l.amt, true)));
+  t.appendChild(line("Loan interest", loanInt, true));
+  t.appendChild(el(`<div class="qb-h b tot"><span>Net income</span><span class="${net >= 0 ? "pos" : "neg"}">${money2(net)}</span></div>`));
+  c.appendChild(t);
+  return c;
+}
+
+function salesTaxSection(tax) {
+  const nextTxt = tax.next ? `Next: ${tax.next.label.replace(/·.*/, "").trim()} by ${new Date(tax.next.due + "T12:00:00").toLocaleDateString([], { month: "short", day: "numeric" })}` : "All quarters filed";
+  const x = expander({ title: `PA sales tax · ${tax.year}`, sub: esc(nextTxt), open: false, build: body => {
+    const c = el(`<div class="card"><div class="ct">Estimated sales tax owed</div><div class="cs">On taxable drinks only · ${money2(tax.ytdTaxDue)} this year</div></div>`);
+    const t = el(`<div class="qb"></div>`);
+    tax.quarters.forEach(q => {
+      const due = new Date(q.due + "T12:00:00").toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" });
+      const isNext = tax.next && q.q === tax.next.q;
+      t.appendChild(el(`<div class="qb-l"><span>${esc(q.label)}<span class="qb-sub">${q.status === "past" ? "was due" : "file by"} ${due}${isNext ? " · next" : ""}</span></span><span>${money2(q.taxDue)}</span></div>`));
+    });
+    t.appendChild(el(`<div class="qb-h b tot"><span>Total ${tax.year}</span><span>${money2(tax.ytdTaxDue)}</span></div>`));
+    c.appendChild(t);
+    if (tax.taxableItems && tax.taxableItems.length) c.appendChild(el(`<p class="money-s" style="margin:12px 0 0">Taxed: ${esc(tax.taxableItems.slice(0, 6).map(i => shortName(i.item)).join(", "))}${tax.taxableItems.length > 6 ? ", …" : ""}. Estimate: taxable sales ÷ 1.06 × 0.06. Check before filing.</p>`));
+    const go = el(`<a href="${esc(tax.fileUrl)}" target="_blank" rel="noopener" class="btn outlined" style="margin-top:12px">${icon("open")}File at myPATH</a>`);
+    c.appendChild(go);
+    body.appendChild(c);
+  } });
+  x.style.marginTop = "16px";
+  return x;
+}
+
+// ---------- 4. balance sheet + loan ----------
+function balanceSheet(d) {
+  const b = d.balanceSheet, L = d.loan || {};
+  const wrap = el(`<div></div>`);
+  const inventory = b.inventory != null ? b.inventory : (b.closetInventory || 0);
+  const c = el(`<div class="card"><div class="ct">What the business owns and owes</div><div class="cs">Cash as of ${esc(b.cashAsOf || "now")}</div></div>`);
+  const t = el(`<div class="qb"></div>`);
+  const grp = (label, val, bold) => t.appendChild(el(`<div class="qb-h ${bold ? "b" : ""}"><span>${esc(label)}</span><span>${money2(val)}</span></div>`));
+  const line = (label, val, sub) => t.appendChild(el(`<div class="qb-l"><span>${esc(label)}${sub ? `<span class="qb-sub">${esc(sub)}</span>` : ""}</span><span>${money2(val)}</span></div>`));
+  grp("Assets", b.assets, true);
+  line("Cash in bank", b.cash);
+  line("Product inventory", inventory, b.closetUnits ? `${b.closetUnits} units` : "");
+  line("Machines", b.equipment, "depreciated value, matches your accountant");
+  t.appendChild(el(`<div class="qb-h b tot"><span>Total assets</span><span>${money2(b.assets)}</span></div>`));
+  grp("Liabilities", b.liabilities, true);
+  line("Wendle loan", b.liabilities, L.source === "sheet" ? "from your loan sheet" : "");
+  grp("Owner's equity", b.equity, true);
+  t.appendChild(el(`<div class="qb-h b tot"><span>Liabilities + equity</span><span>${money2((b.liabilities || 0) + (b.equity || 0))}</span></div>`));
+  c.appendChild(t);
+  wrap.appendChild(c);
+
+  const lc = el(`<div class="card"><div class="ct">Loan payoff</div><div class="cs"></div><div></div></div>`);
+  const cs = lc.querySelector(".cs");
+  if (L.payoffMonth) {
+    cs.innerHTML = `<b style="color:var(--on-surface);font-weight:500">Final payment: ${esc(L.payoffMonth)}</b>, payment ${L.payoffN} (${money2(L.finalAmount)}). Paid through ${esc(L.paidThrough || "none yet")} · ${L.paymentsLeft} to go${L.behind > 0 ? ` · ${L.behind} behind` : ""}.`;
+  }
+  if (L.sheetError) lc.appendChild(el(`<div class="err-line">Couldn't read the loan sheet (${esc(L.sheetError)}). ${L.stale ? "Showing the last copy read." : "Showing the built-in schedule."}</div>`));
+  if (L.schedule && L.schedule.length) {
+    const S = L.schedule;
+    const lastPaidI = S.reduce((a, s, i) => s.paid ? i : a, -1);
+    mountChart(lc.children[2], pal => ({
+      ...axes(pal, S.map(s => s.due.replace(/^(\w{3})\w*/, "$1"))),
+      series: [
+        { name: "Paid", type: "line", showSymbol: false, data: S.map((s, i) => i <= lastPaidI ? s.balance : null), lineStyle: { width: 3, color: pal.primary }, areaStyle: { color: pal.primary, opacity: .12 } },
+        { name: "Scheduled", type: "line", showSymbol: false, data: S.map((s, i) => i >= lastPaidI ? s.balance : null), lineStyle: { width: 2, type: "dashed", color: pal.muted } },
+      ],
+    }), {
+      height: 210, initial: Math.max(0, lastPaidI),
+      readout: i => { const s = S[i]; if (!s) return ""; return `<b>${money2(s.balance)} left</b>Payment ${s.n} · ${esc(s.due)} · ${s.paid ? `paid${s.datePaid ? " " + esc(s.datePaid) : ""}` : "scheduled"} · ${money2(s.principal)} principal, ${money2(Math.max(0, s.interest))} interest`; },
+    });
+  }
+  const open = el(`<a class="btn outlined" href="${esc(L.sheetUrl || "#")}" target="_blank" rel="noopener" style="margin-top:12px">${icon("open")}Open the loan sheet</a>`);
+  lc.appendChild(open);
+  wrap.appendChild(lc);
+
+  sheet({
+    title: "Balance sheet", body: wrap, full: true,
+    info: "Owner's equity is everything the business owns minus the loan. It's negative early on because the loan is bigger than the machines' depreciated value, and it rises with every payment. The loan comes straight from your Google Sheet: a month counts as paid once its Amount Paid cell is filled in.",
+  });
+}
+
+// ---------- 5. inventory loss ----------
+function lossSheet(L) {
+  const body = el(`<div></div>`);
+  const c = el(`<div class="card"><div class="ct">Bought vs sold, at cost</div><div class="cs">The gap is what's on the shelf plus what was lost · through ${esc(L.through)}</div><div></div></div>`);
+  const lbl = k => { const [y, m] = k.split("-"); return `${MON[+m - 1]} ${y.slice(2)}`; };
+  mountChart(c.lastChild, pal => ({
+    ...axes(pal, L.series.map(p => lbl(p.m))),
+    series: [
+      { name: "Bought", type: "line", showSymbol: false, data: L.series.map(p => Math.round(p.bought)), lineStyle: { width: 3, color: pal.bad } },
+      { name: "Sold", type: "line", showSymbol: false, data: L.series.map(p => Math.round(p.sold)), lineStyle: { width: 3, color: pal.primary }, areaStyle: { color: pal.primary, opacity: .10 } },
+    ],
+  }), {
+    height: 220, initial: L.series.length - 1,
+    readout: i => { const p = L.series[i]; if (!p) return ""; return `<b>${money(p.bought - p.sold)} gap</b><span class="k"><i style="background:var(--error)"></i>bought ${money(p.bought)}</span><span class="k"><i style="background:var(--primary)"></i>sold ${money(p.sold)}</span> by ${lbl(p.m)}`; },
+  });
+  body.appendChild(c);
+  const rows = el(`<div class="card"><div class="rows"></div></div>`), r = rows.firstChild;
+  r.appendChild(el(`<div class="row"><div class="nm">Inventory bought<div class="mt">Sam's card + debit statements</div></div><div class="val">${money2(L.bought)}</div></div>`));
+  r.appendChild(el(`<div class="row"><div class="nm">Cost of what sold</div><div class="val">${money2(L.sold)}</div></div>`));
+  r.appendChild(el(`<div class="row"><div class="nm">Still on the shelf</div><div class="val">${money2(L.onHand)}</div></div>`));
+  r.appendChild(el(`<div class="row"><div class="nm"><b>Lost</b><div class="mt">bought − sold − on the shelf</div></div><div class="val down"><b>${money2(L.loss)}</b></div></div>`));
+  body.appendChild(rows);
+  sheet({
+    title: "Inventory loss", sub: `${money2(L.loss)} · ${L.lossPct.toFixed(1)}% of what you bought`, body, full: true,
+    info: `Product you paid for that never became a sale: expired, damaged, eaten, or given away. Sold is valued at today's unit costs, which are higher than past years, so the real loss is likely a little more. It updates as new card statements come in. On the shelf today: ${money(L.currentOnHand)}.`,
+  });
+}
+
+// ---------- 6. product lists ----------
+function productRows(root, d) {
+  const all = d.machines.flatMap(m => m.slots.map(s => ({ ...s, machine: m.name })));
+  const known = all.filter(s => s.cost != null);
+  const soldOut = known.filter(s => s.stockedOut && s.units > 0).sort((a, b) => b.unitsPerDay - a.unitsPerDay);
+  const below = known.filter(s => s.belowCost);
+  const byProd = {};
+  known.forEach(s => { const k = shortName(s.product); (byProd[k] ||= { k, perDay: 0, units: 0 }); byProd[k].perDay += s.perDay; byProd[k].units += s.units; });
+  const slow = Object.values(byProd).filter(p => p.units > 0).sort((a, b) => a.perDay - b.perDay).slice(0, 6);
+  if (!soldOut.length && !below.length && !slow.length) return;
+  root.appendChild(el(`<h2 class="sec-h">Products</h2>`));
+  const card = el(`<div class="card" style="padding:0 16px"><div class="rows"></div></div>`), rows = card.firstChild;
+  const add = (title, sub, open) => { const r = el(`<button class="row tap" style="width:100%;border:0;background:none;text-align:left;font:inherit"><div class="nm">${esc(title)}<div class="mt">${sub}</div></div>${icon("chevron")}</button>`); r.onclick = open; rows.appendChild(r); };
+  if (soldOut.length) add("Sold out", `${soldOut.length} slot${soldOut.length === 1 ? "" : "s"} empty right now`, () => {
+    const b = el(`<div class="rows"></div>`);
+    soldOut.forEach(s => b.appendChild(el(`<div class="row"><div class="nm">${esc(shortName(s.product))}<div class="mt">${esc(s.machine)} · slot ${s.slot} · sells ${s.unitsPerDay.toFixed(2)}/day</div></div><div class="val">${(s.max / Math.max(s.unitsPerDay, .01)).toFixed(1)} days</div></div>`)));
+    sheet({ title: "Sold out", sub: "Right side: how many days a full slot lasts", body: b });
+  });
+  if (below.length) add("Priced at or below cost", `<span style="color:var(--error)">${below.length} lose money on every sale</span>`, () => {
+    const b = el(`<div class="rows"></div>`);
+    const sh = sheet({ title: "Priced at or below cost", sub: "Tap one to fix its cost, or raise the price in AirVend", body: b });
+    below.forEach(s => { const r = el(`<div class="row tap"><div class="nm">${esc(shortName(s.product))}<div class="mt">slot ${s.slot} · costs ${money2(s.cost)} · sells ${money2(s.price)}</div></div><div class="val down">${money2(s.marginEach)}</div></div>`); r.onclick = () => { sh.close(); setTimeout(() => editCost({ product: s.product, price: s.price, cost: s.cost }, ROOT), 240); }; b.appendChild(r); });
+  });
+  if (slow.length) add("Slowest sellers", "Least profit per day, ones to swap out", () => {
+    const b = el(`<div class="rows"></div>`);
+    slow.forEach(p => b.appendChild(el(`<div class="row"><div class="nm">${esc(p.k)}<div class="mt">${p.units} sold</div></div><div class="val">$${p.perDay.toFixed(2)}/day</div></div>`)));
+    sheet({ title: "Slowest sellers", sub: "Profit per day at today's prices", body: b });
+  });
+  root.appendChild(card);
+}
+
+// ---------- re-read AirVend ----------
 async function confirmResync() {
   const ok = await confirmDialog({
     title: "Re-read everything from AirVend?",
@@ -326,239 +415,19 @@ async function confirmResync() {
   catch (_) { snackbar("Couldn't reach AirVend. Nothing changed."); }
 }
 
-// ---------- bank-feed reminder (muted red) ----------
-function bankFeedBanner() {
-  return el(`<div class="alert info" style="cursor:default">${icon("info")}<span class="a-t">Connect the Oklahoma bank once it's open (Plaid, emailed statements, or a CSV). Until then, money numbers only update as fast as the data you add.</span></div>`);
-}
-
-// ---------- P&L with a period selector ----------
-function plSection(pl) {
-  const wrap = el(`<div></div>`);
-  const bar = el(`<div class="period-bar"></div>`);
-  const host = el(`<div></div>`);
-  const periods = [["lastmonth", "Last month"], ["ytd", "This year"], ["lastyear", "Last year"], ["all", "All time"]];
-  let cur = "ytd";
-  const draw = () => {
-    host.innerHTML = "";
-    const rows = filterPL(pl, cur);
-    const label = periods.find(p => p[0] === cur)[1];
-    host.appendChild(rows.length ? plCard(rows, label)
-      : el(`<div class="note">No sales on record for ${label.toLowerCase()} yet.</div>`));
-    [...bar.children].forEach((b, i) => b.classList.toggle("on", periods[i][0] === cur));
-  };
-  periods.forEach(([k, lab]) => { const b = el(`<button class="period-btn">${lab}</button>`); b.onclick = () => { cur = k; draw(); }; bar.appendChild(b); });
-  wrap.appendChild(bar); wrap.appendChild(host); draw();
-  return wrap;
-}
-
-// ---------- QuickBooks-style P&L ----------
-function plCard(pl, periodLabel) {
-  const N = pl.length;
-  const sum = k => pl.reduce((a, p) => a + (p[k] || 0), 0);
-  const sales = sum("revenue"), cogs = sum("cogs"), gross = sum("gross");
-  const loanInt = sum("loanInterest"), opFixed = sum("opFixed");
-  const expenses = opFixed + loanInt, net = gross - expenses;
-  const span = N === 1 ? pl[0].m : `${pl[0].m} – ${pl[N - 1].m}`;
-
-  // one fixed-cost line = its monthly amount × months on record
-  const opLines = (window.__fixedCosts || []).map(c => ({ name: c.name, amt: c.amount * N }));
-
-  const sub = periodLabel ? `${periodLabel} · ${span}` : span;
-  const c = el(`<div class="card"><div class="ct">Profit &amp; loss</div><div class="cs">${esc(sub)} · ${money(net)} kept on ${money(sales)}</div></div>`);
-  const t = el(`<div class="qb"></div>`);
-  const grp = (label, val, bold) => el(`<div class="qb-h ${bold ? "b" : ""}"><span>${esc(label)}</span><span>${money2(val)}</span></div>`);
-  const line = (label, val, neg) => el(`<div class="qb-l"><span>${esc(label)}</span><span${neg ? ' class="neg"' : ""}>${neg ? "−" : ""}${money2(Math.abs(val))}</span></div>`);
-
-  t.appendChild(grp("Income", sales, true));
-  t.appendChild(line("Sales", sales));
-  t.appendChild(line("Cost of goods (product)", cogs, true));
-  t.appendChild(grp("Gross profit", gross, true));
-  t.appendChild(grp("Expenses", expenses, true));
-  opLines.forEach(l => t.appendChild(line(l.name, l.amt, true)));
-  t.appendChild(line("Loan interest", loanInt, true));
-  t.appendChild(el(`<div class="qb-h b tot"><span>Net income</span><span class="${net >= 0 ? "pos" : "neg"}">${money2(net)}</span></div>`));
-  c.appendChild(t);
-
-  // month-by-month detail, collapsed
-  const mbm = expander({
-    title: "Month by month", sub: `${N} month${N === 1 ? "" : "s"}`, open: OPEN.has("mbm"),
-    build: b => {
-      const wrap = el(`<div class="scrollx"></div>`);
-      const tbl = el(`<table class="tbl"><thead><tr><th>Month</th><th>Sales</th><th>Product</th><th>Gross</th><th>Op+int</th><th>Net</th></tr></thead><tbody></tbody></table>`);
-      const tb = tbl.querySelector("tbody");
-      [...pl].reverse().forEach(p => tb.appendChild(el(`<tr><td>${p.m}</td><td>${money(p.revenue)}</td><td>${money(p.cogs)}</td><td>${money(p.gross)}</td><td>${money(p.fixed)}</td><td class="${p.net >= 0 ? "pos" : "neg"}">${money(p.net)}</td></tr>`)));
-      wrap.appendChild(tbl); b.appendChild(wrap);
-    },
-  });
-  mbm.style.background = "var(--surface)";
-  mbm.querySelector(".exp-h").addEventListener("click", () => mbm.classList.contains("open") ? OPEN.add("mbm") : OPEN.delete("mbm"));
-  c.appendChild(mbm);
-  c.appendChild(el(`<div class="note" style="margin-top:12px"><b>Accrual basis, like QuickBooks.</b> Sales count when they happen, and product cost is matched to what sold. Operating costs use today's monthly rates until the bank is connected.</div>`));
-  return c;
-}
-
-// ---------- QuickBooks-style balance sheet ----------
-function balanceSheetCard(b) {
-  const inventory = b.inventory != null ? b.inventory : (b.closetInventory || 0);
-  const currentAssets = (b.cash || 0) + inventory;
-  const c = el(`<div class="card"><div class="ct">Balance sheet</div><div class="cs">What the business owns vs owes · as of ${esc(b.cashAsOf || "now")}</div></div>`);
-  const t = el(`<div class="qb"></div>`);
-  const grp = (label, val, bold) => t.appendChild(el(`<div class="qb-h ${bold ? "b" : ""}"><span>${esc(label)}</span><span>${money2(val)}</span></div>`));
-  const line = (label, val, sub) => t.appendChild(el(`<div class="qb-l"><span>${esc(label)}${sub ? `<span class="qb-sub">${esc(sub)}</span>` : ""}</span><span>${money2(val)}</span></div>`));
-
-  grp("Assets", b.assets, true);
-  grp("Current assets", currentAssets);
-  line("Cash in bank", b.cash);
-  line("Product inventory", inventory, b.closetUnits ? `${b.closetUnits} units, machines + closet (Sortly)` : "from Sortly");
-  grp("Fixed assets", b.equipment);
-  line("Machines (equipment)", b.equipment);
-  t.appendChild(el(`<div class="qb-h b tot"><span>Total assets</span><span>${money2(b.assets)}</span></div>`));
-
-  grp("Liabilities", b.liabilities, true);
-  line("Wendle loan (principal owed)", b.liabilities);
-  grp("Equity", b.equity, true);
-  line("Net worth", b.equity);
-  t.appendChild(el(`<div class="qb-h b tot"><span>Liabilities + equity</span><span>${money2((b.liabilities || 0) + (b.equity || 0))}</span></div>`));
-  c.appendChild(t);
-  const negEq = b.equity < 0;
-  c.appendChild(el(`<div class="note ${negEq ? "warn" : "good"}" style="margin-top:12px"><b>Net worth ${money(b.equity)}:</b> everything you own minus the loan.${negEq ? " Negative is normal this early. The loan still outweighs the depreciated machines, and it climbs as you pay down principal." : ""}</div>`));
-  c.appendChild(el(`<div class="note" style="margin-top:8px;font-size:11.5px">Machines are at depreciated book value ($${b.equipment.toLocaleString()}, MACRS), matching your accountant.</div>`));
-  return c;
-}
-
-// ---------- profit vs cash bridge ----------
-// ---------- Inventory loss (live) ----------
-function lossCard(L) {
-  const gap = L.bought - L.sold;
-  const c = el(`<div class="card"><div class="ct">Inventory &amp; loss</div><div class="cs">Bought vs sold, from your real bank + Sam's card · through ${esc(L.through)}</div></div>`);
-
-  // hero loss figure
-  c.appendChild(el(`<div style="margin:6px 2px 4px">
-    <div style="display:flex;justify-content:space-between;align-items:baseline">
-      <span style="font-size:28px;font-weight:800;letter-spacing:-.02em;color:var(--bad)">${money2(L.loss)}</span>
-      <span style="font-size:12px;color:var(--muted)">lost · ${L.lossPct.toFixed(1)}% of what you bought</span></div>
-    <div style="font-size:12.5px;color:var(--ink-2);margin-top:4px">Product you paid for that never became a sale — expired, ripped, eaten, or given away.</div>
-  </div>`));
-
-  // cumulative bought vs sold chart — the gap IS inventory + loss
-  c.appendChild(cumChart(L.series));
-  c.appendChild(el(`<div class="legend"><span><i style="background:var(--s2)"></i>Bought (at cost)</span><span><i style="background:var(--s1)"></i>Sold (at cost)</span></div>`));
-
-  const rows = el(`<div class="rows" style="margin-top:10px"></div>`);
-  rows.appendChild(el(`<div class="row"><div class="nm">Inventory bought<div class="mt">Sam's card + debit, from your statements</div></div><div class="val">${money2(L.bought)}</div></div>`));
-  rows.appendChild(el(`<div class="row"><div class="nm">Cost of what sold<div class="mt">real units sold × your unit costs</div></div><div class="val">${money2(L.sold)}</div></div>`));
-  rows.appendChild(el(`<div class="row"><div class="nm">Still on the shelf<div class="mt">Sortly, end of window</div></div><div class="val">${money2(L.onHand)}</div></div>`));
-  rows.appendChild(el(`<div class="row"><div class="nm"><b>Loss</b><div class="mt">bought − sold − on-hand</div></div><div class="val down"><b>${money2(L.loss)}</b></div></div>`));
-  c.appendChild(rows);
-
-  c.appendChild(el(`<div class="note" style="margin-top:12px;font-size:11.5px">Live — recomputes every refresh and extends as new card statements and sales come in. Sold is valued at your <i>current</i> unit costs (higher than years past), so real loss is likely a bit more. Today's on-hand: ${money(L.currentOnHand)}.</div>`));
-  return c;
-}
-
-// two cumulative lines with the gap shaded
-function cumChart(series) {
-  const W = 340, H = 176, L = 2, R = 2, T = 18, B = 24, s = svg(W, H);
-  const hi = niceMax(Math.max(...series.map(d => d.bought)) * 1.08);
-  const iw = W - L - R, ih = H - T - B;
-  const xf = i => L + (i / (series.length - 1)) * iw, yf = v => T + ih - (v / (hi || 1)) * ih;
-  for (let g = 0; g <= 2; g++) { const yv = hi * g / 2, y = yf(yv); ln(s, L, y, W - R, y, "var(--line)"); if (g > 0) tx(s, L, y - 5, money(yv), { anchor: "start" }); }
-  // shaded gap between bought and sold
-  let area = `M ${xf(0)} ${yf(series[0].bought)}`;
-  series.forEach((p, i) => area += ` L ${xf(i)} ${yf(p.bought)}`);
-  for (let i = series.length - 1; i >= 0; i--) area += ` L ${xf(i)} ${yf(series[i].sold)}`;
-  pathd(s, area + " Z", "none", 0, "var(--bad)").setAttribute("opacity", ".10");
-  const line = (key, color) => { let d = `M ${xf(0)} ${yf(series[0][key])}`; series.forEach((p, i) => d += ` L ${xf(i)} ${yf(p[key])}`); pathd(s, d, color, 2.2); };
-  line("bought", "var(--s2)");
-  line("sold", "var(--s1)");
-  const lbl = i => { const [y, m] = series[i].m.split("-"); return `${["","Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][+m]} ${y.slice(2)}`; };
-  [0, Math.floor(series.length / 2), series.length - 1].forEach(i => tx(s, xf(i), H - 5, lbl(i)));
-  return s;
-}
-
-function cashBridgeCard(d, pl) {
-  const b = d.balanceSheet;
-  const lifeNet = pl.reduce((a, p) => a + p.net, 0);
-  // Actual cash that went to principal = what's been knocked off the balance
-  // (the schedule's principal column understates it because of your overpayments).
-  const principalPaid = d.loan.principalPaid != null ? d.loan.principalPaid : Math.max(0, (d.loan.principal || 13000) - (d.loan.balance || 0));
-  const inventory = b.inventory != null ? b.inventory : (b.closetInventory || 0);
-  const cash = b.cash || 0;
-
-  const c = el(`<div class="card"><div class="ct">Why profit isn't in the bank</div><div class="cs">Profit ${money(lifeNet)} · cash ${money(cash)} — they're never the same number</div></div>`);
-
-  // ONLY the cash movements we can actually measure. No plug, no forced total.
-  c.appendChild(el(`<div style="font-size:12.5px;color:var(--muted);font-weight:700;margin:6px 2px 2px;text-transform:uppercase;letter-spacing:.06em">What we can measure</div>`));
-  const t = el(`<div class="qb"></div>`);
-  const invLoss = d.inventoryLoss ? d.inventoryLoss.loss : null;
-  t.appendChild(el(`<div class="qb-l"><span>Cash sent to loan principal<span class="qb-sub">real money out; builds equity, never hit the P&amp;L as an expense</span></span><span class="neg">−${money2(principalPaid)}</span></div>`));
-  t.appendChild(el(`<div class="qb-l"><span>Cash tied up in stock on hand<span class="qb-sub">product sitting in the machines + closet</span></span><span class="neg">−${money2(inventory)}</span></div>`));
-  if (invLoss != null) t.appendChild(el(`<div class="qb-l"><span>Inventory loss<span class="qb-sub">bought but never sold — see the card above</span></span><span class="neg">−${money2(invLoss)}</span></div>`));
-  c.appendChild(t);
-
-  c.appendChild(el(`<div class="note" style="margin-top:12px"><b>The loan is the headline.</b> You've put ${money(principalPaid)} of cash into paying down principal — more than your whole profit — so money has clearly also come <i>in</i> (your QuickBooks shows the owner contributions). Profit funded loan equity, stock, and shrinkage, not your checking account.</div>`));
-
-  c.appendChild(el(`<div class="note bad" style="margin-top:10px"><b>Still needs the bank feed to close exactly:</b> money you put in vs. paid yourself, the machine down payment, and deposits still clearing. When the Oklahoma bank is wired, this becomes a full cash-flow statement — no gaps.</div>`));
-  return c;
-}
-
-// ---------- PA sales tax (subtle, collapsed) ----------
-function salesTaxCard(tax) {
-  const nextTxt = tax.next ? `Next: ${tax.next.label.replace(/·.*/, "").trim()} by ${new Date(tax.next.due + "T12:00:00").toLocaleDateString([], { month: "short", day: "numeric" })}` : "All quarters filed";
-  const wrap = expander({ title: `PA sales tax · ${tax.year}`, sub: esc(nextTxt), open: OPEN.has("tax"), build: body => {
-
-    const c = el(`<div class="card"><div class="ct">Estimated sales tax owed</div><div class="cs">On taxable drinks only · ${money2(tax.ytdTaxDue)} year-to-date</div></div>`);
-    const t = el(`<div class="qb"></div>`);
-    tax.quarters.forEach(q => {
-      const due = new Date(q.due + "T12:00:00").toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" });
-      const isNext = tax.next && q.q === tax.next.q;
-      t.appendChild(el(`<div class="qb-l"><span>${esc(q.label)}<span class="qb-sub">${q.status === "past" ? "was due" : "file by"} ${due}${isNext ? " · next" : ""}</span></span><span${isNext ? ' style="color:var(--s1);font-weight:700"' : ""}>${money2(q.taxDue)}</span></div>`));
-    });
-    t.appendChild(el(`<div class="qb-h b tot"><span>Total ${tax.year}</span><span>${money2(tax.ytdTaxDue)}</span></div>`));
-    c.appendChild(t);
-
-    if (tax.taxableItems && tax.taxableItems.length) {
-      const top = tax.taxableItems.slice(0, 6).map(i => shortName(i.item)).join(", ");
-      c.appendChild(el(`<div class="note" style="margin-top:12px"><b>Taxed items:</b> ${esc(top)}${tax.taxableItems.length > 6 ? ", …" : ""}. Snacks, candy, plain water, tea, and cold coffee aren't taxed.</div>`));
-    }
-    c.appendChild(el(`<div class="note" style="margin-top:8px;font-size:11.5px">Method: taxable gross ÷ 1.06 × 0.06 (61 PA Code § 31.28); items per REV-717. Estimate — verify before filing.</div>`));
-    const go = el(`<a href="${esc(tax.fileUrl)}" target="_blank" rel="noopener" class="btn outlined">${icon("open")}File at myPATH</a>`);
-    c.appendChild(go);
-    body.appendChild(c);
-  } });
-  wrap.style.marginTop = "28px";
-  wrap.querySelector(".exp-h").addEventListener("click", () => wrap.classList.contains("open") ? OPEN.add("tax") : OPEN.delete("tax"));
-  return wrap;
-}
-
-// Wraps a full card in a tap-to-open row. The headline number sits in the row's
-// subtitle so the screen stays short; the full statement is one tap away.
-function drill(key, title, sub, makeCard) {
-  const x = expander({ title, sub, open: OPEN.has(key), build: b => { const c = makeCard(); c.classList.add("in-exp"); b.appendChild(c); } });
-  x.querySelector(".exp-h").addEventListener("click", () => x.classList.contains("open") ? OPEN.add(key) : OPEN.delete(key));
-  return x;
-}
-
-function sectionLabel(text) {
-  return el(`<h2 class="sec-h">${esc(text)}</h2>`);
-}
-
-// ---------- health banners (top, muted red) ----------
+// ---------- alerts ----------
 function healthBanners(root, d) {
   const issues = (d.audit && d.audit.issues) || [];
   const wrap = el(`<div id="tv-health"></div>`);
   root.appendChild(wrap);
-
   const below = issues.find(i => i.code === "below_cost");
   const unknown = issues.find(i => i.code === "unknown_costs");
   const est = issues.find(i => i.code === "estimated_costs");
   const broke = issues.find(i => i.code === "machine_unreachable" || i.code === "no_sales");
-
   const banner = (text, onClick) => {
-    const b = el(`<button class="alert">${icon("warn")}<span class="a-t">${text}</span>${onClick ? icon("chevron") : ""}</button>`);
-    if (onClick) b.onclick = onClick; else b.style.cursor = "default";
-    wrap.appendChild(b);
+    const b = el(`<button class="alert">${icon("warn")}<span class="a-t">${text}</span>${icon("chevron")}</button>`);
+    b.onclick = onClick; wrap.appendChild(b);
   };
-
   const items = [];
   if (broke) items.push({ text: `<b>${esc(broke.title)}.</b> Tap to try again.`, go: () => refreshCompany(root) });
   if (below) items.push({ text: `<b>${esc(shortName(below.product || "A product"))} is priced at or below cost.</b> Raise it in AirVend, or fix the cost.`, go: () => editCost({ product: below.product, price: null, cost: null }, root) });
@@ -607,60 +476,4 @@ function editCost(p, root) {
   });
   setTimeout(() => inp.focus(), 300);
   inp.onkeydown = e => { if (e.key === "Enter") sh.footer.querySelector(".btn.filled").click(); };
-}
-
-// ---------- More (collapsible) ----------
-function moreSection(d, allSlots, known, S, pl) {
-  const wrap = expander({ title: "More charts", sub: "Days, hours, seasons, categories, machines", open: OPEN.has("more"), build: body => {
-    const dow = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-
-    if (S) {
-      const dm = Math.max(...S.byDow), c1 = el(`<div class="card"><div class="ct">Best days to be stocked</div><div class="cs">Total sales by weekday, last ${S.spanDays} days</div></div>`);
-      S.byDow.forEach((v, i) => c1.appendChild(barRow(dow[i], v, dm, i === 0 || i === 6 ? "var(--s4)" : "var(--s1)", money)));
-      body.appendChild(c1);
-
-      const c2 = el(`<div class="card"><div class="ct">When people buy</div><div class="cs">Sales by hour of day</div></div>`); c2.appendChild(hourChart(S.byHour)); body.appendChild(c2);
-
-      if (S.months && S.months.length > 2) {
-        const c3 = el(`<div class="card"><div class="ct">Seasonal curve</div><div class="cs">Machine revenue by month, ${S.months[0].m} → now</div></div>`);
-        c3.appendChild(lineChart(S.months.map(m => ({ m: m.m.slice(2), v: Math.round(m.revenue) }))));
-        body.appendChild(c3);
-      }
-
-      if (S.monthlyByCategory && S.monthlyByCategory.length > 2) {
-        const series = [
-          { key: "energy", label: "Energy", color: "var(--s1)" },
-          { key: "soda", label: "Soda", color: "var(--s2)" },
-          { key: "sports/water", label: "Sports/water", color: "var(--s3)" },
-          { key: "chips", label: "Chips", color: "var(--s4)" },
-          { key: "candy", label: "Candy", color: "#c9770e" },
-          { key: "pastry", label: "Pastry", color: "#7b5ea7" },
-          { key: "cold food", label: "Cold food", color: "#3f8f6b" },
-        ];
-        const c3b = el(`<div class="card"><div class="ct">Category seasonality</div><div class="cs">Units/month per category — does energy carry winter, chips carry summer?</div></div>`);
-        c3b.appendChild(multiLineChart(S.monthlyByCategory, series));
-        const leg = el(`<div class="legend"></div>`);
-        series.forEach(se => leg.appendChild(el(`<span><i style="background:${se.color}"></i>${se.label}</span>`)));
-        c3b.appendChild(leg);
-        body.appendChild(c3b);
-      }
-    }
-    if (pl.length) {
-      const c4 = el(`<div class="card"><div class="ct">Net profit trend</div><div class="cs">After product and fixed costs, last 12 months</div></div>`); c4.appendChild(barChart(pl.slice(-12).map(p => ({ m: p.m.slice(0, 3), v: Math.round(p.net) })))); body.appendChild(c4);
-      const c5 = el(`<div class="card"><div class="ct">Money in vs out</div><div class="cs">Sales against everything spent</div></div>`); c5.appendChild(groupChart(pl.slice(-12).map(p => ({ m: p.m.slice(0, 3), i: Math.round(p.revenue), o: Math.round(p.debits) })), "i", "o", "var(--s3)", "var(--s2)")); c5.appendChild(el(`<div class="legend"><span><i style="background:var(--s3)"></i>In</span><span><i style="background:var(--s2)"></i>Out</span></div>`)); body.appendChild(c5);
-    }
-    // category mix
-    const cats = {}; known.forEach(s => cats[s.category] = (cats[s.category] || 0) + s.profit);
-    const catList = Object.entries(cats).map(([k, v]) => ({ k, v })).sort((a, b) => b.v - a.v);
-    const catMax = Math.max(...catList.map(c => c.v), 0.01), catTot = catList.reduce((a, c) => a + c.v, 0);
-    const cc = { Drinks: "var(--s1)", Snacks: "var(--s3)", Candy: "var(--s4)", "Cold Food": "var(--s2)" };
-    const c6 = el(`<div class="card"><div class="ct">Profit by category</div><div class="cs">Where the margin comes from</div></div>`);
-    catList.forEach(c => c6.appendChild(barRow(`${c.k} · ${Math.round(c.v / catTot * 100)}%`, c.v, catMax, cc[c.k] || "var(--s1)"))); body.appendChild(c6);
-    // machine vs machine
-    const mc = el(`<div class="card"><div class="ct">Machine vs machine</div><div class="cs">Profit per day and fill right now</div></div>`); const mr = el(`<div class="rows"></div>`);
-    d.machines.forEach(m => { const ks = m.slots.filter(s => s.cost != null); const pd = ks.reduce((a, s) => a + (s.perDay || 0), 0); const fill = Math.round(m.slots.reduce((a, s) => a + s.fillPct, 0) / (m.slots.length || 1)); mr.appendChild(el(`<div class="row"><div class="nm">${esc(m.name)}<div class="mt">${m.slots.length} slots · ${fill}% full</div></div><div class="val">$${pd.toFixed(2)}/d</div></div>`)); });
-    mc.appendChild(mr); body.appendChild(mc);
-  } });
-  wrap.querySelector(".exp-h").addEventListener("click", () => wrap.classList.contains("open") ? OPEN.add("more") : OPEN.delete("more"));
-  return wrap;
 }

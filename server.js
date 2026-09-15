@@ -14,6 +14,8 @@ import { auditData } from "./audit.js";
 import { LOAN, loanStatus } from "./loan.js";
 import { pullSales, pullSalesRange, summarize, startOfWeek, easternNow } from "./sales.js";
 import { getDoc, setDoc, storeReady } from "./store.js";
+import { getRestocks, sinceRestock } from "./restocks.js";
+import { loanFromSheet } from "./loansheet.js";
 import { salesTaxReport } from "./salestax.js";
 import { SLOTS, WINDOW_LABEL } from "./finance.js";
 
@@ -131,6 +133,29 @@ function monthlyByCategory(txns) {
     .map(([m, cats]) => ({ m, ...cats }));
 }
 
+// Top 5 items for each of the last 14 selling weeks, for tapping a bar in the weekly chart.
+function weekTopItems(txns) {
+  const out = {};
+  for (const t of txns) {
+    const w = startOfWeek(t.when).toISOString().slice(0, 10);
+    const c = costFor(t.item);
+    const it = ((out[w] ||= {})[t.item] ||= { item: t.item, revenue: 0, profit: 0, units: 0 });
+    it.revenue += t.amount; it.units += 1; if (c != null) it.profit += t.amount - c;
+  }
+  const keys = Object.keys(out).sort().slice(-14);
+  return Object.fromEntries(keys.map(k => [k, Object.values(out[k]).sort((a, b) => b.revenue - a.revenue).slice(0, 5)]));
+}
+
+// Restock times from AirVend's Refill History. Re-read every 10 minutes, and
+// right away after the app sends a restock.
+let restockCache = { at: 0, data: null };
+async function getRestockTimes(force = false) {
+  if (!force && restockCache.data && Date.now() - restockCache.at < INV_TTL) return restockCache.data;
+  try { restockCache = { at: Date.now(), data: await getRestocks(MACHINES.map(m => m.id)) }; }
+  catch (e) { if (!restockCache.data) throw e; }
+  return restockCache.data;
+}
+
 async function getSales(force = false) {
   if (!force && salesCache.sum && Date.now() - salesCache.at < SALES_TTL) return salesCache.sum;
 
@@ -158,7 +183,8 @@ async function getSales(force = false) {
   const sum = summarize(all, costFor);
   sum.salesTax = salesTaxReport(all, 2026);
   sum.monthlyByCategory = monthlyByCategory(all);
-  salesCache = { at: Date.now(), sum };
+  sum.weekTop = weekTopItems(all);
+  salesCache = { at: Date.now(), sum, txns: all };
   return sum;
 }
 
@@ -219,6 +245,13 @@ async function buildLive(force = false) {
     machines.push({ ...m, slots: rows });
   }
 
+  // Sales since the last restock vs the same stretch after the previous 4 restocks.
+  let restock = null;
+  try {
+    const times = await getRestockTimes(force);
+    if (salesCache.txns) restock = sinceRestock(salesCache.txns, times, MACHINES, easternNow().getTime(), costFor);
+  } catch (e) { restock = { error: e?.message || "Couldn't read restock history from AirVend." }; }
+
   // Balance sheet — what the business owns vs owes, right now. Uses loadCloset()
   // (seeds if needed) so your closet inventory is ALWAYS counted, even if the
   // Inventory tab hasn't been opened yet this session.
@@ -232,7 +265,7 @@ async function buildLive(force = false) {
   // that was the $730.90 bug.
   const inventory = closetInventory;
   const bank = MONTHLY[MONTHLY.length - 1] || {};
-  const loan = loanStatus();
+  const loan = await loanFromSheet(force);
   // Equipment at NET BOOK VALUE (MACRS-depreciated), matching Stephen's real
   // accountant balance sheet — cost basis $11,738 less accumulated depreciation
   // (Yr1 $2,348 + Yr2 $3,756) = $5,634 as of the 2025 filing. This is why real
@@ -276,13 +309,13 @@ async function buildLive(force = false) {
       thisWeek: sales.thisWeek, lastWeek: sales.lastWeek,
       thisMonth: sales.thisMonth, lastMonth: sales.lastMonth,
       weekStart: sales.weekStart, weeks: sales.weeks, days: sales.days,
-      byDow: sales.byDow, byHour: sales.byHour, byItem: sales.byItem.slice(0, 40),
+      weekTop: sales.weekTop, byDow: sales.byDow, byHour: sales.byHour, byItem: sales.byItem.slice(0, 40),
       months: sales.months, monthlyByCategory: sales.monthlyByCategory, firstSale: sales.firstSale,
       txnCount: sales.txnCount, spanDays: Math.round(spanDays),
       freshAt: salesCache.at,
     } : null,
     window: SALES_WINDOW, monthly: MONTHLY, fixedCosts: FIXED_COSTS,
-    pl: buildPL(sales?.months), loan, balanceSheet, inventoryLoss, salesTax: sales?.salesTax || null, at: Date.now(),
+    pl: buildPL(sales?.months), loan, restock, balanceSheet, inventoryLoss, salesTax: sales?.salesTax || null, at: Date.now(),
   };
   try { payload.audit = auditData(payload, closet); }
   catch (e) { payload.audit = { issues: [], counts: { critical: 0, warning: 0, info: 0 } }; }
@@ -545,6 +578,9 @@ app.post("/api/airvend/write", rateLimit(20, 60 * 1000), async (req, res) => {
   try {
     const result = await writeOnHand(machineId, gapsToMissing(gaps), { dryRun: false });
     res.json(result);
+    // a restock just happened: re-read restock times and sales so Business starts fresh
+    restockCache.at = 0; liveCache.at = 0;
+    refreshLive(true).catch(() => {});
   } catch (err) {
     console.error("airvend write error:", err?.message || err);
     res.status(502).json({ error: "airvend_failed", message: err?.message || "AirVend rejected the update. Nothing was changed." });

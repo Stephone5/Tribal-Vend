@@ -363,8 +363,28 @@ body.kbd .actionbar{bottom:0}
 .sheet.full{height:92dvh}
 .sheet .handle{width:32px; height:4px; border-radius:var(--r-full); background:var(--on-surface-variant); opacity:.4; margin:22px auto 0; flex:none; touch-action:none; position:relative}
 .sheet .handle::after{content:""; position:absolute; inset:-20px -40px}
-.sheet-h{display:flex; align-items:flex-start; gap:8px; padding:12px 8px 0 24px}
-.sheet-h > div{flex:1; padding-top:10px}
+.sheet-h{display:flex; flex:none; align-items:flex-start; gap:8px; padding:12px 8px 12px 24px; transition:box-shadow .15s}
+.sheet-h.lift{box-shadow:0 1px 0 var(--outline-variant)}
+.sheet-h > div:first-child{flex:1; padding-top:10px}
+.sheet-h-actions{display:flex; flex:none}
+/* ---- interactive charts ---- */
+.ichart{margin:0 -4px; touch-action:pan-y}
+.ichart-read{min-height:44px; padding:0 4px 8px; font-size:14px; line-height:20px; color:var(--on-surface-variant); font-variant-numeric:tabular-nums}
+.ichart-read b{display:block; font-size:22px; line-height:28px; font-weight:500; color:var(--on-surface)}
+.ichart-read .k{display:inline-flex; align-items:center; gap:6px; margin-right:12px}
+.ichart-read .k i{width:10px; height:10px; border-radius:3px; display:inline-block}
+/* ---- tappable cards ---- */
+button.hero, button.card, .tapcard{display:block; width:100%; text-align:left; border:0; font:inherit; cursor:pointer; position:relative; -webkit-tap-highlight-color:transparent; user-select:none}
+button.hero:active, button.card:active{filter:brightness(.96)}
+.tapcard .chev{position:absolute; right:12px; top:16px; color:var(--on-surface-variant)}
+.hero .row2{display:flex; align-items:baseline; gap:8px; margin-top:2px; font-size:16px; line-height:24px}
+.hero .row2 b{font-size:22px; line-height:28px; font-weight:500; font-variant-numeric:tabular-nums}
+.money-v{font-size:28px; line-height:36px; font-weight:400; font-variant-numeric:tabular-nums; margin-top:4px}
+.money-s{font-size:14px; line-height:20px; color:var(--on-surface-variant)}
+.updating{animation:tvPulse 1.2s ease-in-out infinite}
+@keyframes tvPulse{50%{opacity:.72}}
+@media (prefers-reduced-motion: reduce){.updating{animation:none}}
+.err-line{color:var(--error); font-size:14px; line-height:20px; margin-top:8px}
 .sheet-h p{margin:4px 0 0}
 .sheet-b{padding:8px 24px 16px; overflow:auto; flex:1; overscroll-behavior:contain}
 .sheet-b .rows{margin:0 -24px}

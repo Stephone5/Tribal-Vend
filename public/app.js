@@ -1,6 +1,6 @@
 import { packageOf } from "./data.js";
 import { renderCloset, closetTabHidden, refreshCloset } from "./closet.js";
-import { renderCompany, refreshCompany } from "./company.js";
+import { renderCompany, refreshCompany, companyAfterRestock } from "./company.js";
 import { renderChat } from "./chat.js";
 import { apiFetch, setPass } from "./api.js";
 import { el, esc, icon, sheet, confirmDialog, snackbar, pullToRefresh, segmented, skel, haptic, setBackFallback, setAppbarSub, setTabSub, getTabSub } from "./ui.js";
@@ -241,6 +241,7 @@ function openFillSheet(m) {
     const sold = res.soldSince && res.soldSince.length ? ` ${res.soldSince.length} already sold since.` : "";
     snackbar(`AirVend updated and checked · ${res.wrote} slots.${sold}`);
     LIVE = null; renderRuns(true);
+    companyAfterRestock();
   }
 }
 
