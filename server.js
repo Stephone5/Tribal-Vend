@@ -404,6 +404,8 @@ async function loadCloset() {
   // One-time: add the OK fridge-machine Sam's Club buys (order 1045 3481 805,
   // picked up Aug 31, plus the Sep 1/4/5 deliveries). Every line was Qty 1 at the
   // price actually paid. Adds onto matching items; new items created. Runs once.
+  const nissin = (doc.items || []).find(i => i.id === "OK0831-01");
+  if (nissin && nissin.folder !== "Cold Food") { nissin.folder = "Cold Food"; await setDoc(CLOSET_KEY, doc); }
   if (!(await getDoc(OK_BUY_KEY).catch(() => null))) {
     const items = doc.items || (doc.items = []);
     // Stephen: snacks and candy are at zero now (only the fridge machine is running).
@@ -423,7 +425,7 @@ async function loadCloset() {
 
 const OK_BUY_KEY = "closet:okbuy-2026-08-31";
 const OK_BUY_0831 = [
-  { id: "OK0831-01", folder: "Snacks",    name: "Nissin Chow Mein",      match: ["nissin chow mein"], units: 8,  paid: 9.97 },
+  { id: "OK0831-01", folder: "Cold Food", name: "Nissin Chow Mein",      match: ["nissin chow mein"], units: 8,  paid: 9.97 },
   { id: "OK0831-02", folder: "Cold Food", name: "Hot Pockets",           match: ["hot pockets"], units: 20, paid: 14.88 },
   { id: "OK0831-03", folder: "Cold Food", name: "Jimmy Dean SEC",        match: ["jimmy dean sec"], units: 12, paid: 11.73 },
   { id: "OK0831-04", folder: "Cold Food", name: "Uncrustables",          match: ["uncrustables"], units: 24, paid: 11.87 },
