@@ -2,6 +2,7 @@
 // Paints instantly from the last cached pull, then refreshes in the background.
 
 import { apiFetch } from "./api.js";
+import { icon, sheet, confirmDialog, snackbar, pullToRefresh, expander, setTabSub, skel } from "./ui.js";
 
 const SVGNS = "http://www.w3.org/2000/svg";
 const el = h => { const t = document.createElement("template"); t.innerHTML = h.trim(); return t.content.firstChild; };
@@ -37,30 +38,30 @@ const EMP_MONTHLY = Math.round(EMP_RATE * EMP_HRS * 4.333);
 // ---------- chart helpers ----------
 function svg(w, h) { const s = document.createElementNS(SVGNS, "svg"); s.setAttribute("class", "chart"); s.setAttribute("viewBox", `0 0 ${w} ${h}`); return s; }
 function ln(s, x1, y1, x2, y2, stroke, sw = 1) { const l = document.createElementNS(SVGNS, "line"); l.setAttribute("x1", x1); l.setAttribute("y1", y1); l.setAttribute("x2", x2); l.setAttribute("y2", y2); l.setAttribute("stroke", stroke); l.setAttribute("stroke-width", sw); s.appendChild(l); }
-function tx(s, x, y, str, o = {}) { const t = document.createElementNS(SVGNS, "text"); t.setAttribute("x", x); t.setAttribute("y", y); t.setAttribute("fill", o.fill || "var(--muted)"); t.setAttribute("font-size", o.size || 10); t.setAttribute("text-anchor", o.anchor || "middle"); t.setAttribute("font-weight", o.weight || 500); t.setAttribute("font-variant-numeric", "tabular-nums"); t.textContent = str; s.appendChild(t); }
+function tx(s, x, y, str, o = {}) { const t = document.createElementNS(SVGNS, "text"); t.setAttribute("x", x); t.setAttribute("y", y); t.setAttribute("fill", o.fill || "var(--on-surface-variant)"); t.setAttribute("font-size", o.size || 12); t.setAttribute("text-anchor", o.anchor || "middle"); t.setAttribute("font-weight", o.weight || 500); t.setAttribute("font-variant-numeric", "tabular-nums"); t.textContent = str; s.appendChild(t); }
 function rect(s, x, y, w, h, fill, r = 3) { const p = document.createElementNS(SVGNS, "rect"); p.setAttribute("x", x); p.setAttribute("y", y); p.setAttribute("width", Math.max(0, w)); p.setAttribute("height", Math.max(0, h)); p.setAttribute("rx", r); p.setAttribute("fill", fill); s.appendChild(p); }
 function pathd(s, d, stroke, sw = 2, fill = "none") { const p = document.createElementNS(SVGNS, "path"); p.setAttribute("d", d); p.setAttribute("fill", fill); p.setAttribute("stroke", stroke); p.setAttribute("stroke-width", sw); p.setAttribute("stroke-linejoin", "round"); p.setAttribute("stroke-linecap", "round"); s.appendChild(p); return p; }
 function niceMax(v) { if (v <= 0) return 1; const p = Math.pow(10, Math.floor(Math.log10(v))); const n = v / p; return (n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10) * p; }
 
 function barChart(series, { fmt = money } = {}) {
-  const W = 680, H = 190, L = 6, R = 6, T = 14, B = 22;
+  const W = 340, H = 168, L = 2, R = 2, T = 18, B = 24;
   const s = svg(W, H);
   const vals = series.map(d => d.v);
   const hi = niceMax(Math.max(...vals, 0) * 1.1), lo = Math.min(0, ...vals) * 1.1;
   const iw = W - L - R, ih = H - T - B, yf = v => T + ih - ((v - lo) / (hi - lo || 1)) * ih;
-  for (let g = 0; g <= 2; g++) { const yv = lo + (hi - lo) * g / 2; const y = yf(yv); ln(s, L, y, W - R, y, "var(--line)"); tx(s, L, y - 4, fmt(yv), { anchor: "start" }); }
+  for (let g = 0; g <= 2; g++) { const yv = lo + (hi - lo) * g / 2; const y = yf(yv); ln(s, L, y, W - R, y, "var(--line)"); if (g > 0) tx(s, L, y - 5, fmt(yv), { anchor: "start" }); }
   const zero = yf(0); ln(s, L, zero, W - R, zero, "var(--muted)", 1);
-  const gw = iw / series.length, bw = Math.min(18, gw - 4);
+  const gw = iw / series.length, bw = Math.max(3, Math.min(14, gw - 4));
   series.forEach((d, i) => { const x = L + i * gw + (gw - bw) / 2, y = d.v >= 0 ? yf(d.v) : zero; rect(s, x, y, bw, Math.abs(yf(d.v) - zero), d.v >= 0 ? "var(--s3)" : "var(--bad)", 3); });
   [0, Math.floor(series.length / 2), series.length - 1].forEach(i => tx(s, L + i * gw + gw / 2, H - 5, series[i].m));
   return s;
 }
 function lineChart(series, { color = "var(--s1)", avg = null } = {}) {
-  const W = 680, H = 190, L = 6, R = 6, T = 14, B = 22;
+  const W = 340, H = 168, L = 2, R = 2, T = 18, B = 24;
   const s = svg(W, H);
   const vals = series.map(d => d.v), hi = niceMax(Math.max(...vals) * 1.08);
   const iw = W - L - R, ih = H - T - B, xf = i => L + (series.length === 1 ? iw / 2 : (i / (series.length - 1)) * iw), yf = v => T + ih - (v / (hi || 1)) * ih;
-  for (let g = 0; g <= 2; g++) { const yv = hi * g / 2; const y = yf(yv); ln(s, L, y, W - R, y, "var(--line)"); tx(s, L, y - 4, money(yv), { anchor: "start" }); }
+  for (let g = 0; g <= 2; g++) { const yv = hi * g / 2; const y = yf(yv); ln(s, L, y, W - R, y, "var(--line)"); if (g > 0) tx(s, L, y - 5, money(yv), { anchor: "start" }); }
   let d = `M ${xf(0)} ${yf(vals[0])}`; series.forEach((p, i) => d += ` L ${xf(i)} ${yf(p.v)}`);
   pathd(s, d + ` L ${xf(series.length - 1)} ${yf(0)} L ${xf(0)} ${yf(0)} Z`, "none", 0, color).setAttribute("opacity", ".10");
   pathd(s, d, color, 2);
@@ -70,12 +71,12 @@ function lineChart(series, { color = "var(--s1)", avg = null } = {}) {
 }
 function multiLineChart(rows, series) {
   // rows: [{m, <key>:units, ...}] ; series: [{key,label,color}]
-  const W = 680, H = 210, L = 6, R = 6, T = 14, B = 22;
+  const W = 340, H = 180, L = 2, R = 2, T = 18, B = 24;
   const s = svg(W, H);
   const hi = niceMax(Math.max(...rows.flatMap(r => series.map(se => r[se.key] || 0)), 1) * 1.08);
   const iw = W - L - R, ih = H - T - B;
   const xf = i => L + (rows.length === 1 ? iw / 2 : (i / (rows.length - 1)) * iw), yf = v => T + ih - (v / hi) * ih;
-  for (let g = 0; g <= 2; g++) { const yv = hi * g / 2, y = yf(yv); ln(s, L, y, W - R, y, "var(--line)"); tx(s, L, y - 4, String(Math.round(yv)), { anchor: "start" }); }
+  for (let g = 0; g <= 2; g++) { const yv = hi * g / 2, y = yf(yv); ln(s, L, y, W - R, y, "var(--line)"); if (g > 0) tx(s, L, y - 5, String(Math.round(yv)), { anchor: "start" }); }
   series.forEach(se => {
     let d = "";
     rows.forEach((r, i) => { d += `${i ? " L" : "M"} ${xf(i)} ${yf(r[se.key] || 0)}`; });
@@ -85,21 +86,21 @@ function multiLineChart(rows, series) {
   return s;
 }
 function groupChart(rows, aKey, bKey, aColor, bColor) {
-  const W = 680, H = 190, L = 6, R = 6, T = 14, B = 22;
+  const W = 340, H = 168, L = 2, R = 2, T = 18, B = 24;
   const s = svg(W, H);
   const hi = niceMax(Math.max(...rows.map(d => Math.max(d[aKey], d[bKey]))) * 1.1);
   const iw = W - L - R, ih = H - T - B, yf = v => T + ih - (v / hi) * ih;
-  for (let g = 0; g <= 2; g++) { const yv = hi * g / 2; const y = yf(yv); ln(s, L, y, W - R, y, "var(--line)"); tx(s, L, y - 4, money(yv), { anchor: "start" }); }
-  const gw = iw / rows.length, bw = Math.min(10, (gw - 5) / 2);
+  for (let g = 0; g <= 2; g++) { const yv = hi * g / 2; const y = yf(yv); ln(s, L, y, W - R, y, "var(--line)"); if (g > 0) tx(s, L, y - 5, money(yv), { anchor: "start" }); }
+  const gw = iw / rows.length, bw = Math.max(2, Math.min(8, (gw - 4) / 2));
   rows.forEach((d, i) => { const cx = L + i * gw + gw / 2; rect(s, cx - bw - 1, yf(d[aKey]), bw, ih - (yf(d[aKey]) - T), aColor, 2); rect(s, cx + 1, yf(d[bKey]), bw, ih - (yf(d[bKey]) - T), bColor, 2); });
   [0, Math.floor(rows.length / 2), rows.length - 1].forEach(i => tx(s, L + i * gw + gw / 2, H - 5, rows[i].m));
   return s;
 }
 function hourChart(byHour) {
-  const W = 680, H = 160, L = 6, R = 6, T = 12, B = 20, s = svg(W, H);
+  const W = 340, H = 150, L = 2, R = 2, T = 18, B = 24, s = svg(W, H);
   const hi = niceMax(Math.max(...byHour) * 1.1), iw = W - L - R, ih = H - T - B, yf = v => T + ih - (v / (hi || 1)) * ih;
-  for (let g = 0; g <= 2; g++) { const yv = hi * g / 2; const y = yf(yv); ln(s, L, y, W - R, y, "var(--line)"); tx(s, L, y - 4, money(yv), { anchor: "start" }); }
-  const gw = iw / 24, bw = Math.max(6, gw - 3);
+  for (let g = 0; g <= 2; g++) { const yv = hi * g / 2; const y = yf(yv); ln(s, L, y, W - R, y, "var(--line)"); if (g > 0) tx(s, L, y - 5, money(yv), { anchor: "start" }); }
+  const gw = iw / 24, bw = Math.max(4, gw - 3);
   byHour.forEach((v, h) => rect(s, L + h * gw + (gw - bw) / 2, yf(v), bw, ih - (yf(v) - T), v >= hi * 0.5 ? "var(--s1)" : "var(--s3)", 2));
   [0, 6, 12, 18, 23].forEach(h => tx(s, L + h * gw + gw / 2, H - 5, h === 0 ? "12a" : h === 12 ? "12p" : h > 12 ? (h - 12) + "p" : h + "a"));
   return s;
@@ -111,41 +112,48 @@ function barRow(label, value, max, color, fmtv = money2) {
 
 // ---------- entry: instant from cache, then refresh ----------
 let ROOT = null;
+const OPEN = new Set();   // sections you opened stay open when numbers refresh
 export async function renderCompany(root) {
   ROOT = root;
+  pullToRefresh(root, () => refreshCompany(root));
   let cached = null;
   try { cached = JSON.parse(localStorage.getItem(LIVE_LSK)); } catch {}
   if (cached) paint(root, cached, true);
   else root.innerHTML = skeleton();
-
+  await load(root, false, !!cached);
+}
+// Pull-to-refresh / app bar refresh: make the server re-read AirVend now.
+export async function refreshCompany(root) {
+  ROOT = root;
+  const ok = await load(root, true, true);
+  snackbar(ok ? "Numbers updated" : "Couldn't refresh. Showing your last numbers.");
+}
+async function load(root, force, haveSomething) {
   try {
-    const r = await apiFetch("/api/live");
-    if (r.ok) {
-      const d = await r.json();
-      try { localStorage.setItem(LIVE_LSK, JSON.stringify(d)); } catch {}
-      if (ROOT === root) paint(root, d, false);
-    } else if (!cached) {
-      root.innerHTML = `<div class="note bad" style="margin-top:20px"><b>Couldn't load your numbers.</b> Pull to refresh in a moment.</div>`;
-    }
+    const r = await apiFetch("/api/live" + (force ? "?refresh=1" : ""));
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const d = await r.json();
+    try { localStorage.setItem(LIVE_LSK, JSON.stringify(d)); } catch {}
+    if (ROOT === root) paint(root, d, false);
+    return true;
   } catch (e) {
-    if (!cached) root.innerHTML = `<div class="note bad" style="margin-top:20px"><b>Offline.</b> Showing nothing yet — reconnect and reopen.</div>`;
+    if (!haveSomething) {
+      root.innerHTML = `<div class="empty">${icon("warn")}Couldn't load your numbers.<br>Check your connection, then pull down to try again.</div>`;
+      setTabSub("company", "Offline");
+    }
+    return false;
   }
 }
 
 function skeleton() {
-  return `<div style="margin-top:20px">
-    <div class="skel" style="height:150px;border-radius:22px"></div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:11px;margin-top:12px">
-      <div class="skel" style="height:92px"></div><div class="skel" style="height:92px"></div>
-    </div>
-    <div class="skel" style="height:210px;margin-top:12px"></div>
-  </div>`;
+  return `${skel(208, 16)}<div class="tiles" style="margin-top:0">${skel(96, 12)}${skel(96, 12)}</div>${skel(240, 12)}`;
 }
 
 // ---------- paint ----------
 function paint(root, d, stale) {
   const scrollY = window.scrollY;
   root.innerHTML = "";
+  setTabSub("company", stale ? "Updating…" : `Updated ${new Date(d.at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}${d.sales ? ` · ${d.sales.txnCount.toLocaleString()} sales` : ""}`);
 
   healthBanners(root, d);
 
@@ -170,7 +178,7 @@ function paint(root, d, stale) {
     <div class="k">Sales this week</div>
     <div class="v">${money2(wkR)}</div>
     <div class="sub"><b>${money2(wkP)}</b> profit · ${wkU} units · resets Mon midnight</div>
-    <div class="delta ${wkDelta >= 0 ? "up" : "down"}">${wkDelta >= 0 ? "▲" : "▼"} ${pct(wkDelta)} vs this point last week</div>
+    <div class="delta">${pct(wkDelta)} vs this point last week</div>
     <div class="chips">
       <span class="chip"><span>Last week</span><b>${money(lwR)}</b></span>
       <span class="chip"><span>Empty now</span><b>${allSlots.filter(s => s.onHand === 0).length}</b></span>
@@ -179,7 +187,7 @@ function paint(root, d, stale) {
   </div>`));
 
   if (S) {
-    const c = el(`<div class="card"><div class="ct">Weekly profit</div><div class="cs">Every week Sunday → Saturday · this week still filling in</div></div>`);
+    const c = el(`<div class="card"><div class="ct">Weekly profit</div><div class="cs">Weeks run Tuesday through Monday · this week is still filling in</div></div>`);
     c.appendChild(barChart(S.weeks.slice(-14).map(w => ({ m: new Date(w.w).toLocaleDateString([], { month: "numeric", day: "numeric" }), v: Math.round(w.profit) }))));
     root.appendChild(c);
   }
@@ -187,25 +195,17 @@ function paint(root, d, stale) {
   // ===================== SECTION 2 · THE MONEY =====================
   root.appendChild(sectionLabel("The money"));
 
-  // Standing reminder: the money numbers are only as live as the data feeding
-  // them. Once the OK bank is open, this has to be wired up.
-  root.appendChild(bankFeedBanner());
-
-  // Profit & loss — period selector (Last month / This year / Last year / All
-  // time) over a QuickBooks-style hierarchy.
-  if (pl.length) root.appendChild(plSection(pl));
-
-  // Balance sheet — QuickBooks-style grouping.
-  if (d.balanceSheet) root.appendChild(balanceSheetCard(d.balanceSheet));
-
-  // Inventory loss — live, from real bank/card purchases vs sales.
-  if (d.inventoryLoss) root.appendChild(lossCard(d.inventoryLoss));
-
-  // Why profit ≠ cash — the question every owner asks.
-  if (pl.length && d.balanceSheet && d.loan) root.appendChild(cashBridgeCard(d, pl));
+  if (pl.length) {
+    const ytd = filterPL(pl, "ytd"), ytdNet = ytd.reduce((a, p) => a + p.net, 0), ytdRev = ytd.reduce((a, p) => a + p.revenue, 0);
+    root.appendChild(drill("pl", "Profit & loss", `<span class="num">${money(ytdNet)}</span> kept this year on <span class="num">${money(ytdRev)}</span> in sales`, () => { const w = plSection(pl); w.prepend(bankFeedBanner()); return w; }));
+  }
+  if (d.balanceSheet) root.appendChild(drill("bs", "Balance sheet", `Net worth <span class="num">${money(d.balanceSheet.equity)}</span>`, () => balanceSheetCard(d.balanceSheet)));
+  if (d.inventoryLoss) root.appendChild(drill("loss", "Inventory loss", `<span class="num" style="color:var(--error)">${money(d.inventoryLoss.loss)}</span> lost · ${d.inventoryLoss.lossPct.toFixed(1)}% of what you bought`, () => lossCard(d.inventoryLoss)));
+  if (pl.length && d.balanceSheet && d.loan) root.appendChild(drill("cash", "Why profit isn't in the bank", "Where the money went", () => cashBridgeCard(d, pl)));
 
   // Loan
-  if (d.loan) {
+  if (d.loan) root.appendChild(drill("loan", "Wendle loan", `<span class="num">${money(d.loan.balance)}</span> owed · paid off ${new Date(d.loan.payoffDate + "T12:00:00").toLocaleDateString([], { month: "short", year: "numeric" })}`, () => {
+    const wrap = el(`<div></div>`);
     const L = d.loan, payoff = new Date(L.payoffDate + "T12:00:00");
     const lc = el(`<div class="card"><div class="ct">Wendle loan</div><div class="cs">$13,000 at 10% · ${money2(L.payment)}/mo · payment ${L.monthNumber} of 93</div></div>`);
     lc.appendChild(el(`<div style="margin:4px 2px 2px">
@@ -219,9 +219,10 @@ function paint(root, d, stale) {
     lr.appendChild(el(`<div class="row"><div class="nm">Paid off</div><div class="val">${payoff.toLocaleDateString([], { month: "short", year: "numeric" })}</div></div>`));
     lr.appendChild(el(`<div class="row"><div class="nm">Interest still to come</div><div class="val down">${money(L.interestLeft)}</div></div>`));
     lc.appendChild(lr);
-    root.appendChild(lc);
-    if (L.overpayWarning > 0) root.appendChild(el(`<div class="note warn"><b>Stop after payment 93, not 96.</b> The schedule lists 96 but the balance hits zero at 93 — paying all 96 hands over about ${money(L.overpayWarning * L.payment)} you don't owe.</div>`));
-  }
+    wrap.appendChild(lc);
+    if (L.overpayWarning > 0) wrap.appendChild(el(`<div class="note warn"><b>Stop after payment 93, not 96.</b> The schedule lists 96 but the balance hits zero at 93. Paying all 96 hands over about ${money(L.overpayWarning * L.payment)} you don't owe.</div>`));
+    return wrap;
+  }));
 
   // Break-even + hire threshold. This is a CASH question — what you must clear
   // to cover the bills — so it uses the whole loan payment, not just interest.
@@ -239,6 +240,8 @@ function paint(root, d, stale) {
     const breakeven = fixed / margin;
     const hireNeed = (fixed + EMP_MONTHLY) / margin;
     const gap = hireNeed - recentRev;
+    const beSub = `Break even at <span class="num">${money(breakeven)}</span>/mo · you average <span class="num">${money(recentRev)}</span>`;
+    root.appendChild(drill("be", "Break-even & hiring", beSub, () => {
     const bc = el(`<div class="card"><div class="ct">Break-even &amp; hiring</div><div class="cs">Averaging ${money(recentRev)}/mo · at your real ${Math.round(margin * 100)}% margin after shrinkage</div></div>`);
     const rows = el(`<div class="rows"></div>`);
     rows.appendChild(el(`<div class="row"><div class="nm">Just to break even<div class="mt">cover ${money(fixed)}/mo — bills + the ${money(loanPay)} loan payment</div></div><div class="val ${recentRev >= breakeven ? "up" : "down"}">${money(breakeven)}</div></div>`));
@@ -246,8 +249,9 @@ function paint(root, d, stale) {
     bc.appendChild(rows);
     bc.appendChild(el(`<div class="note ${gap <= 0 ? "good" : ""}">${gap <= 0
       ? `<b>You can afford the helper.</b> You're clearing the ${money(hireNeed)} bar by about ${money(-gap)}/month.`
-      : `<b>${money(gap)}/month more in sales</b> and a $${EMP_RATE}/hr helper pays for itself — roughly one more machine's worth.`}</div>`));
-    root.appendChild(bc);
+      : `<b>${money(gap)}/month more in sales</b> and a $${EMP_RATE}/hr helper pays for itself, roughly one more machine's worth.`}</div>`));
+    return bc;
+    }));
   }
 
   // ===================== SECTION 3 · YOUR PRODUCTS =====================
@@ -259,36 +263,36 @@ function paint(root, d, stale) {
   const prods = Object.entries(byProd).map(([k, v]) => ({ k, ...v })).sort((a, b) => b.perDay - a.perDay);
 
   const top = prods.slice(0, 10), maxPD = Math.max(...top.map(p => p.perDay), 0.01);
-  const tc = el(`<div class="card"><div class="ct">Top earners</div><div class="cs">Profit per day at today's prices — the number that matters</div></div>`);
-  top.forEach(p => tc.appendChild(barRow(p.k, p.perDay, maxPD, "var(--s1)", v => "$" + v.toFixed(2) + "/d")));
+  const tc = el(`<div class="card"><div class="ct">Top earners</div><div class="cs">Profit per day at today's prices</div></div>`);
+  top.forEach(p => tc.appendChild(barRow(p.k, p.perDay, maxPD, "var(--s1)", v => "$" + v.toFixed(2) + "/day")));
   root.appendChild(tc);
 
   // sold out — losing sales
   const soldOut = known.filter(s => s.stockedOut && s.units > 0).sort((a, b) => b.unitsPerDay - a.unitsPerDay);
-  if (soldOut.length) {
-    const so = el(`<div class="card"><div class="ct">Sold out — losing sales <span class="pill warn">${soldOut.length}</span></div><div class="cs">Empty before you got back. Right column = days that par lasts.</div></div>`);
+  if (soldOut.length) root.appendChild(drill("soldout", "Sold out, losing sales", `${soldOut.length} slot${soldOut.length === 1 ? "" : "s"} ran empty before you got back`, () => {
+    const so = el(`<div class="card"><div class="ct">Sold out</div><div class="cs">Right column: how many days a full slot lasts</div></div>`);
     const rr = el(`<div class="rows"></div>`);
-    soldOut.forEach(s => rr.appendChild(el(`<div class="row"><div class="nm">${esc(shortName(s.product))}<div class="mt">${esc(s.machine)} · slot ${s.slot} · sells ${s.unitsPerDay.toFixed(2)}/day · par ${s.max}</div></div><div class="val">${(s.max / Math.max(s.unitsPerDay, .01)).toFixed(1)}d</div></div>`)));
-    so.appendChild(rr); root.appendChild(so);
-  }
+    soldOut.forEach(s => rr.appendChild(el(`<div class="row"><div class="nm">${esc(shortName(s.product))}<div class="mt">${esc(s.machine)} · slot ${s.slot} · sells ${s.unitsPerDay.toFixed(2)}/day · par ${s.max}</div></div><div class="val">${(s.max / Math.max(s.unitsPerDay, .01)).toFixed(1)} days</div></div>`)));
+    so.appendChild(rr); return so;
+  }));
 
   // below cost
   const below = known.filter(s => s.belowCost);
-  if (below.length) {
-    const bc = el(`<div class="card"><div class="ct">Priced at or below cost <span class="pill bad">fix</span></div><div class="cs">Every sale loses money — raise the price or fix the cost</div></div>`);
+  if (below.length) root.appendChild(drill("below", "Priced at or below cost", `<span style="color:var(--error)">${below.length} product${below.length === 1 ? "" : "s"}</span> lose money on every sale`, () => {
+    const bc = el(`<div class="card"><div class="ct">Priced at or below cost</div><div class="cs">Tap one to fix its cost, or raise the price in AirVend</div></div>`);
     const rr = el(`<div class="rows"></div>`);
-    below.forEach(s => { const row = el(`<div class="row" style="cursor:pointer"><div class="nm">${esc(shortName(s.product))}<div class="mt">slot ${s.slot} · costs ${money2(s.cost)} · sells ${money2(s.price)}</div></div><div class="val down">${money2(s.marginEach)}</div></div>`); row.onclick = () => editCost({ product: s.product, price: s.price, cost: s.cost }, root); rr.appendChild(row); });
-    bc.appendChild(rr); root.appendChild(bc);
-  }
+    below.forEach(s => { const row = el(`<div class="row tap"><div class="nm">${esc(shortName(s.product))}<div class="mt">slot ${s.slot} · costs ${money2(s.cost)} · sells ${money2(s.price)}</div></div><div class="val down">${money2(s.marginEach)}</div></div>`); row.onclick = () => editCost({ product: s.product, price: s.price, cost: s.cost }, root); rr.appendChild(row); });
+    bc.appendChild(rr); return bc;
+  }));
 
   // slowest slots (replaces "running low")
   const slow = prods.filter(p => p.units > 0).slice(-6).reverse();
-  if (slow.length) {
-    const sc = el(`<div class="card"><div class="ct">Slowest slots</div><div class="cs">Least profit per day — candidates to replace next reset</div></div>`);
+  if (slow.length) root.appendChild(drill("slow", "Slowest slots", "Least profit per day, candidates to swap out", () => {
+    const sc = el(`<div class="card"><div class="ct">Slowest slots</div><div class="cs">Least profit per day</div></div>`);
     const maxS = Math.max(...slow.map(p => Math.abs(p.perDay)), 0.01);
-    slow.forEach(p => sc.appendChild(barRow(p.k, p.perDay, maxS, "var(--s4)", v => "$" + v.toFixed(2) + "/d")));
-    root.appendChild(sc);
-  }
+    slow.forEach(p => sc.appendChild(barRow(p.k, p.perDay, maxS, "var(--s4)", v => "$" + v.toFixed(2) + "/day")));
+    return sc;
+  }));
 
   // ===================== SALES TAX (subtle, collapsed) =====================
   if (d.salesTax) root.appendChild(salesTaxCard(d.salesTax));
@@ -296,55 +300,35 @@ function paint(root, d, stale) {
   // ===================== MORE (collapsible) =====================
   root.appendChild(moreSection(d, allSlots, known, S, pl));
 
-  // ---- footer ----
-  const foot = el(`<div style="text-align:center;color:var(--muted);font-size:11px;margin-top:22px">
-    ${stale ? "Updating…" : `Updated ${new Date(d.at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`}${S ? ` · ${S.txnCount.toLocaleString()} sales on record` : ""}
-    <div style="margin-top:10px"><button id="refreshNow" class="btn ghost" style="width:auto;display:inline-block;padding:10px 18px;margin:0">Refresh now</button></div>
-  </div>`);
-  root.appendChild(foot);
-  foot.querySelector("#refreshNow").onclick = async (e) => { e.target.textContent = "Refreshing…"; e.target.disabled = true; try { await apiFetch("/api/live?refresh=1"); } catch (_) {} renderCompany(root); };
-
-  // Deliberate, rare full re-read of AirVend (double-confirmed).
+  // Deliberate, rare full re-read of AirVend (confirmed in a dialog).
   root.appendChild(airvendResyncButton());
 
-  window.scrollTo(0, stale ? scrollY : 0);
+  window.scrollTo(0, scrollY);
 }
 
 // ---- deliberate "re-read everything from AirVend" (double-confirm) ----
 function airvendResyncButton() {
-  const wrap = el(`<div style="text-align:center;margin-top:20px;padding-top:16px;border-top:1px solid var(--line)"></div>`);
-  const b = el(`<button class="btn ghost" style="width:auto;display:inline-block;padding:9px 16px;margin:0;color:var(--muted);font-size:12px">⟳ Re-read everything from AirVend</button>`);
+  const wrap = el(`<div style="display:flex;justify-content:center;margin-top:24px"></div>`);
+  const b = el(`<button class="btn text inline">${icon("refresh")}Re-read everything from AirVend</button>`);
   b.onclick = confirmResync;
   wrap.appendChild(b);
   return wrap;
 }
-function confirmResync() {
-  const modal = el(`<div style="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:70;display:flex;align-items:center;justify-content:center;padding:24px"></div>`);
-  const sheet = el(`<div style="background:var(--surface);border-radius:20px;max-width:430px;width:100%;padding:22px 20px;box-shadow:var(--shadow)">
-    <div style="font-weight:800;font-size:18px;color:var(--ink)">Re-read everything from AirVend?</div>
-    <div style="color:var(--ink-2);font-size:13.5px;line-height:1.5;margin-top:9px">Use this <b>only after you changed something in AirVend itself</b> — a par, a price, a swapped product. It replaces the app's planogram, pars, prices and on-hand with whatever AirVend says right now.</div>
-    <div style="color:var(--muted);font-size:12px;margin-top:9px">It won't touch your closet or your cost corrections. You rarely need this.</div>
-    <button id="rs-yes" class="btn" style="margin-top:16px;background:var(--bad);color:#fff">Yes, re-read from AirVend</button>
-    <button id="rs-no" class="btn ghost" style="margin-top:8px">Cancel</button>
-  </div>`);
-  modal.appendChild(sheet); document.body.appendChild(modal);
-  modal.onclick = e => { if (e.target === modal) modal.remove(); };
-  sheet.querySelector("#rs-no").onclick = () => modal.remove();
-  const yes = sheet.querySelector("#rs-yes");
-  let armed = false;
-  yes.onclick = async () => {
-    if (!armed) { armed = true; yes.textContent = "Tap again to confirm"; yes.style.background = "var(--warn)"; return; } // double-confirm
-    yes.disabled = true; yes.textContent = "Reading AirVend…";
-    try { if (window.tvResyncAirVend) await window.tvResyncAirVend(); } catch (_) {}
-    modal.remove();
-  };
+async function confirmResync() {
+  const ok = await confirmDialog({
+    title: "Re-read everything from AirVend?",
+    body: "Only needed after you change something in AirVend itself, like a par, a price, or a swapped product. It replaces the app's pars, prices and on-hand counts with what AirVend has now. Your inventory and cost corrections aren't touched.",
+    confirm: "Re-read",
+  });
+  if (!ok) return;
+  snackbar("Reading AirVend…");
+  try { if (window.tvResyncAirVend) await window.tvResyncAirVend(); snackbar("Everything re-read from AirVend"); }
+  catch (_) { snackbar("Couldn't reach AirVend. Nothing changed."); }
 }
 
 // ---------- bank-feed reminder (muted red) ----------
 function bankFeedBanner() {
-  return el(`<div style="display:flex;align-items:flex-start;gap:10px;background:var(--banner-bg);border:1px solid var(--banner-border);border-radius:12px;padding:11px 13px;margin-bottom:2px">
-    <span style="width:7px;height:7px;border-radius:50%;background:var(--banner-dot);flex:none;margin-top:5px"></span>
-    <span style="flex:1;font-size:12.5px;color:var(--banner-ink);font-weight:600;line-height:1.4">When you open the new bank in Oklahoma, wire its data into this app — Plaid, emailed statements, or a periodic CSV. Until then these numbers only move as fast as the data you feed in.</span></div>`);
+  return el(`<div class="alert info" style="cursor:default">${icon("info")}<span class="a-t">Connect the Oklahoma bank once it's open (Plaid, emailed statements, or a CSV). Until then, money numbers only update as fast as the data you add.</span></div>`);
 }
 
 // ---------- P&L with a period selector ----------
@@ -396,16 +380,20 @@ function plCard(pl, periodLabel) {
   c.appendChild(t);
 
   // month-by-month detail, collapsed
-  const tog = el(`<button class="btn ghost" style="margin-top:12px;display:flex;align-items:center;justify-content:center;gap:7px">Month by month <span>▾</span></button>`);
-  const body = el(`<div hidden style="margin-top:10px"></div>`);
-  const wrap = el(`<div class="scrollx"></div>`);
-  const tbl = el(`<table class="tbl"><thead><tr><th>Month</th><th>Sales</th><th>Product</th><th>Gross</th><th>Op+int</th><th>Net</th></tr></thead><tbody></tbody></table>`);
-  const tb = tbl.querySelector("tbody");
-  [...pl].reverse().forEach(p => tb.appendChild(el(`<tr><td><b>${p.m}</b></td><td>${money(p.revenue)}</td><td>${money(p.cogs)}</td><td>${money(p.gross)}</td><td>${money(p.fixed)}</td><td class="${p.net >= 0 ? "pos" : "neg"}">${money(p.net)}</td></tr>`)));
-  wrap.appendChild(tbl); body.appendChild(wrap);
-  tog.onclick = () => { body.hidden = !body.hidden; tog.querySelector("span").textContent = body.hidden ? "▾" : "▴"; };
-  c.appendChild(tog); c.appendChild(body);
-  c.appendChild(el(`<div class="note" style="margin-top:12px"><b>Accrual basis</b> — like your QuickBooks. Sales are booked when they happen (not when the cash lands), and product cost is matched to the units actually sold. Operating costs are estimated at today's monthly rates until the bank feed is wired.</div>`));
+  const mbm = expander({
+    title: "Month by month", sub: `${N} month${N === 1 ? "" : "s"}`, open: OPEN.has("mbm"),
+    build: b => {
+      const wrap = el(`<div class="scrollx"></div>`);
+      const tbl = el(`<table class="tbl"><thead><tr><th>Month</th><th>Sales</th><th>Product</th><th>Gross</th><th>Op+int</th><th>Net</th></tr></thead><tbody></tbody></table>`);
+      const tb = tbl.querySelector("tbody");
+      [...pl].reverse().forEach(p => tb.appendChild(el(`<tr><td>${p.m}</td><td>${money(p.revenue)}</td><td>${money(p.cogs)}</td><td>${money(p.gross)}</td><td>${money(p.fixed)}</td><td class="${p.net >= 0 ? "pos" : "neg"}">${money(p.net)}</td></tr>`)));
+      wrap.appendChild(tbl); b.appendChild(wrap);
+    },
+  });
+  mbm.style.background = "var(--surface)";
+  mbm.querySelector(".exp-h").addEventListener("click", () => mbm.classList.contains("open") ? OPEN.add("mbm") : OPEN.delete("mbm"));
+  c.appendChild(mbm);
+  c.appendChild(el(`<div class="note" style="margin-top:12px"><b>Accrual basis, like QuickBooks.</b> Sales count when they happen, and product cost is matched to what sold. Operating costs use today's monthly rates until the bank is connected.</div>`));
   return c;
 }
 
@@ -433,8 +421,8 @@ function balanceSheetCard(b) {
   t.appendChild(el(`<div class="qb-h b tot"><span>Liabilities + equity</span><span>${money2((b.liabilities || 0) + (b.equity || 0))}</span></div>`));
   c.appendChild(t);
   const negEq = b.equity < 0;
-  c.appendChild(el(`<div class="note ${negEq ? "warn" : "good"}" style="margin-top:12px"><b>Net worth: ${money(b.equity)}</b> — everything you own, minus the loan.${negEq ? " Negative is normal this early — the loan ($" + Math.round(b.liabilities).toLocaleString() + ") still outweighs the depreciated machines. It climbs as you pay down principal." : ""}</div>`));
-  c.appendChild(el(`<div class="note" style="margin-top:8px;font-size:11.5px">Machines are at depreciated book value ($${b.equipment.toLocaleString()}, MACRS), matching your accountant — not sticker price. A balance sheet is a snapshot of <i>right now</i> — that's why it has no date buttons like the P&L. Once the bank feed is in, this can be shown as of any past date too.</div>`));
+  c.appendChild(el(`<div class="note ${negEq ? "warn" : "good"}" style="margin-top:12px"><b>Net worth ${money(b.equity)}:</b> everything you own minus the loan.${negEq ? " Negative is normal this early. The loan still outweighs the depreciated machines, and it climbs as you pay down principal." : ""}</div>`));
+  c.appendChild(el(`<div class="note" style="margin-top:8px;font-size:11.5px">Machines are at depreciated book value ($${b.equipment.toLocaleString()}, MACRS), matching your accountant.</div>`));
   return c;
 }
 
@@ -469,11 +457,11 @@ function lossCard(L) {
 
 // two cumulative lines with the gap shaded
 function cumChart(series) {
-  const W = 680, H = 200, L = 6, R = 6, T = 14, B = 22, s = svg(W, H);
+  const W = 340, H = 176, L = 2, R = 2, T = 18, B = 24, s = svg(W, H);
   const hi = niceMax(Math.max(...series.map(d => d.bought)) * 1.08);
   const iw = W - L - R, ih = H - T - B;
   const xf = i => L + (i / (series.length - 1)) * iw, yf = v => T + ih - (v / (hi || 1)) * ih;
-  for (let g = 0; g <= 2; g++) { const yv = hi * g / 2, y = yf(yv); ln(s, L, y, W - R, y, "var(--line)"); tx(s, L, y - 4, money(yv), { anchor: "start" }); }
+  for (let g = 0; g <= 2; g++) { const yv = hi * g / 2, y = yf(yv); ln(s, L, y, W - R, y, "var(--line)"); if (g > 0) tx(s, L, y - 5, money(yv), { anchor: "start" }); }
   // shaded gap between bought and sold
   let area = `M ${xf(0)} ${yf(series[0].bought)}`;
   series.forEach((p, i) => area += ` L ${xf(i)} ${yf(p.bought)}`);
@@ -515,16 +503,8 @@ function cashBridgeCard(d, pl) {
 
 // ---------- PA sales tax (subtle, collapsed) ----------
 function salesTaxCard(tax) {
-  const wrap = el(`<div style="margin-top:26px"></div>`);
-  const nextTxt = tax.next ? `next: ${tax.next.label.replace(/·.*/, "").trim()} by ${new Date(tax.next.due + "T12:00:00").toLocaleDateString([], { month: "short", day: "numeric" })}` : "all quarters filed";
-  const tog = el(`<button class="btn ghost" style="display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:13px;color:var(--muted)"><span>PA sales tax · ${tax.year}</span><span style="font-size:12px">${esc(nextTxt)} <span id="txchev">▾</span></span></button>`);
-  const body = el(`<div hidden style="margin-top:10px"></div>`);
-  wrap.appendChild(tog); wrap.appendChild(body);
-  let built = false;
-  tog.onclick = () => {
-    body.hidden = !body.hidden;
-    tog.querySelector("#txchev").textContent = body.hidden ? "▾" : "▴";
-    if (built || body.hidden) return; built = true;
+  const nextTxt = tax.next ? `Next: ${tax.next.label.replace(/·.*/, "").trim()} by ${new Date(tax.next.due + "T12:00:00").toLocaleDateString([], { month: "short", day: "numeric" })}` : "All quarters filed";
+  const wrap = expander({ title: `PA sales tax · ${tax.year}`, sub: esc(nextTxt), open: OPEN.has("tax"), build: body => {
 
     const c = el(`<div class="card"><div class="ct">Estimated sales tax owed</div><div class="cs">On taxable drinks only · ${money2(tax.ytdTaxDue)} year-to-date</div></div>`);
     const t = el(`<div class="qb"></div>`);
@@ -541,15 +521,25 @@ function salesTaxCard(tax) {
       c.appendChild(el(`<div class="note" style="margin-top:12px"><b>Taxed items:</b> ${esc(top)}${tax.taxableItems.length > 6 ? ", …" : ""}. Snacks, candy, plain water, tea, and cold coffee aren't taxed.</div>`));
     }
     c.appendChild(el(`<div class="note" style="margin-top:8px;font-size:11.5px">Method: taxable gross ÷ 1.06 × 0.06 (61 PA Code § 31.28); items per REV-717. Estimate — verify before filing.</div>`));
-    const go = el(`<a href="${esc(tax.fileUrl)}" target="_blank" rel="noopener" class="btn" style="margin-top:12px;text-decoration:none;display:block;text-align:center">File at myPATH (mypath.pa.gov) →</a>`);
+    const go = el(`<a href="${esc(tax.fileUrl)}" target="_blank" rel="noopener" class="btn outlined">${icon("open")}File at myPATH</a>`);
     c.appendChild(go);
     body.appendChild(c);
-  };
+  } });
+  wrap.style.marginTop = "28px";
+  wrap.querySelector(".exp-h").addEventListener("click", () => wrap.classList.contains("open") ? OPEN.add("tax") : OPEN.delete("tax"));
   return wrap;
 }
 
+// Wraps a full card in a tap-to-open row. The headline number sits in the row's
+// subtitle so the screen stays short; the full statement is one tap away.
+function drill(key, title, sub, makeCard) {
+  const x = expander({ title, sub, open: OPEN.has(key), build: b => { const c = makeCard(); c.classList.add("in-exp"); b.appendChild(c); } });
+  x.querySelector(".exp-h").addEventListener("click", () => x.classList.contains("open") ? OPEN.add(key) : OPEN.delete(key));
+  return x;
+}
+
 function sectionLabel(text) {
-  return el(`<div style="display:flex;align-items:center;gap:10px;margin:30px 2px 12px"><span style="width:22px;height:3px;background:var(--gold);border-radius:2px"></span><span style="font-size:12px;text-transform:uppercase;letter-spacing:.1em;color:var(--ink-2);font-weight:800">${esc(text)}</span></div>`);
+  return el(`<h2 class="sec-h">${esc(text)}</h2>`);
 }
 
 // ---------- health banners (top, muted red) ----------
@@ -564,65 +554,64 @@ function healthBanners(root, d) {
   const broke = issues.find(i => i.code === "machine_unreachable" || i.code === "no_sales");
 
   const banner = (text, onClick) => {
-    const b = el(`<div style="display:flex;align-items:center;gap:10px;background:var(--banner-bg);border:1px solid var(--banner-border);border-radius:12px;padding:11px 13px;margin-top:10px;cursor:${onClick ? "pointer" : "default"}">
-      <span style="width:7px;height:7px;border-radius:50%;background:var(--banner-dot);flex:none"></span>
-      <span style="flex:1;font-size:13px;color:var(--banner-ink);font-weight:600;line-height:1.35">${text}</span>
-      ${onClick ? `<span style="color:var(--banner-dot);font-size:17px">›</span>` : ""}</div>`);
-    if (onClick) b.onclick = onClick;
+    const b = el(`<button class="alert">${icon("warn")}<span class="a-t">${text}</span>${onClick ? icon("chevron") : ""}</button>`);
+    if (onClick) b.onclick = onClick; else b.style.cursor = "default";
     wrap.appendChild(b);
   };
 
-  if (broke) banner(`<b>${esc(broke.title)}.</b> Tap to retry.`, () => renderCompany(root));
-  if (below) banner(`<b>${esc(shortName(below.product || "A product"))} is priced at or below cost.</b> Raise it in AirVend, or fix the cost.`, () => editCost({ product: below.product, price: null, cost: null }, root));
-  if (unknown) banner(`<b>${unknown.products.length} product${unknown.products.length === 1 ? "" : "s"} missing a cost.</b> They're left out of profit. Tap to set them.`, () => costChooser(unknown.products, root));
-  if (est) banner(`${est.products.length} cost${est.products.length === 1 ? " is an estimate" : "s are estimates"}, not your records. Tap to check them.`, () => costChooser(est.products, root));
+  const items = [];
+  if (broke) items.push({ text: `<b>${esc(broke.title)}.</b> Tap to try again.`, go: () => refreshCompany(root) });
+  if (below) items.push({ text: `<b>${esc(shortName(below.product || "A product"))} is priced at or below cost.</b> Raise it in AirVend, or fix the cost.`, go: () => editCost({ product: below.product, price: null, cost: null }, root) });
+  if (unknown) items.push({ text: `<b>${unknown.products.length} product${unknown.products.length === 1 ? "" : "s"} missing a cost.</b> Left out of profit until set.`, go: () => costChooser(unknown.products, root) });
+  if (est) items.push({ text: `${est.products.length} cost${est.products.length === 1 ? " is an estimate" : "s are estimates"}, not from your records.`, go: () => costChooser(est.products, root) });
+  if (items.length === 1) banner(items[0].text, items[0].go);
+  else if (items.length > 1) banner(`<b>${items.length} things need a look</b>`, () => {
+    const list = el(`<div class="rows"></div>`);
+    const sh = sheet({ title: "Needs a look", body: list });
+    items.forEach(it => { const r = el(`<div class="row tap"><div class="nm" style="font-size:14px;line-height:20px">${it.text}</div>${icon("chevron")}</div>`); r.onclick = () => { sh.close(); setTimeout(it.go, 240); }; list.appendChild(r); });
+  });
 }
 
 // ---------- cost correction ----------
 function costChooser(products, root) {
-  const modal = el(`<div style="position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:60;display:flex;align-items:flex-end;justify-content:center"></div>`);
-  const sheet = el(`<div style="background:var(--surface);width:100%;max-width:520px;border-radius:20px 20px 0 0;padding:18px 16px calc(22px + env(safe-area-inset-bottom));max-height:82vh;overflow:auto"><div style="font-weight:800;font-size:16px;margin-bottom:4px">Set the real costs</div><div style="color:var(--muted);font-size:12.5px;margin-bottom:12px">Tap a product and enter what you actually pay per unit.</div></div>`);
-  modal.appendChild(sheet); document.body.appendChild(modal);
-  modal.onclick = e => { if (e.target === modal) modal.remove(); };
   const rows = el(`<div class="rows"></div>`);
-  products.forEach(p => { const row = el(`<div class="row" style="cursor:pointer"><div class="nm">${esc(shortName(p.product))}<div class="mt">${p.cost == null ? "no cost set" : "estimated " + money2(p.cost)}${p.price ? " · sells " + money2(p.price) : ""}</div></div><div class="val" style="color:var(--s1)">set ›</div></div>`); row.onclick = () => { modal.remove(); editCost(p, root); }; rows.appendChild(row); });
-  sheet.appendChild(rows);
-  const close = el(`<button class="btn ghost" style="margin-top:14px">Done</button>`); close.onclick = () => modal.remove(); sheet.appendChild(close);
+  const sh = sheet({ title: "Set the real costs", sub: "Tap a product and enter what you pay per unit.", body: rows });
+  products.forEach(p => {
+    const row = el(`<div class="row tap"><div class="nm">${esc(shortName(p.product))}<div class="mt">${p.cost == null ? "No cost set" : "Estimated " + money2(p.cost)}${p.price ? " · sells " + money2(p.price) : ""}</div></div>${icon("chevron")}</div>`);
+    row.onclick = () => { sh.close(); setTimeout(() => editCost(p, root), 240); };
+    rows.appendChild(row);
+  });
 }
 function editCost(p, root) {
-  const modal = el(`<div style="position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:61;display:flex;align-items:flex-end;justify-content:center"></div>`);
-  const sheet = el(`<div style="background:var(--surface);width:100%;max-width:520px;border-radius:20px 20px 0 0;padding:18px 16px calc(22px + env(safe-area-inset-bottom))">
-      <div style="font-weight:800;font-size:16px">${esc(shortName(p.product))}</div>
-      <div style="color:var(--muted);font-size:12.5px;margin-top:3px">${p.price ? "Sells for " + money2(p.price) + ". " : ""}What do you pay per unit?</div>
-      <input id="cst" type="text" inputmode="decimal" value="${p.cost != null ? p.cost : ""}" placeholder="0.00" style="width:100%;margin-top:14px;background:var(--surface-2);border:1.5px solid var(--line);color:var(--ink);border-radius:12px;padding:15px;font-size:19px;text-align:center">
-      <div id="cerr" style="color:var(--bad);font-size:12px;height:15px;margin-top:6px"></div>
-      <button id="csave" class="btn">Save cost</button>
-      <button id="ccancel" class="btn ghost" style="margin-top:8px">Cancel</button></div>`);
-  modal.appendChild(sheet); document.body.appendChild(modal);
-  modal.onclick = e => { if (e.target === modal) modal.remove(); };
-  sheet.querySelector("#ccancel").onclick = () => modal.remove();
-  const inp = sheet.querySelector("#cst"); inp.focus();
-  sheet.querySelector("#csave").onclick = async () => {
-    const v = parseFloat(inp.value), err = sheet.querySelector("#cerr");
-    if (isNaN(v) || v < 0) { err.textContent = "Enter a number, like 0.79"; return; }
-    const btn = sheet.querySelector("#csave"); btn.disabled = true; btn.textContent = "Saving…";
-    try { await apiFetch("/api/costs", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ product: p.product, cost: v }) }); await apiFetch("/api/live?refresh=1"); modal.remove(); renderCompany(root); }
-    catch (e) { err.textContent = "Couldn't save. Try again."; btn.disabled = false; btn.textContent = "Save cost"; }
-  };
+  const body = el(`<div>
+    <div class="field"><label for="cst">Cost per unit</label><input id="cst" type="text" inputmode="decimal" value="${p.cost != null ? p.cost : ""}" placeholder="0.00"></div>
+    <div class="t-body-s" id="cerr" role="alert" style="color:var(--error);min-height:16px;margin:4px 4px 0"></div>
+  </div>`);
+  const inp = body.querySelector("#cst"), err = body.querySelector("#cerr");
+  const sh = sheet({
+    title: shortName(p.product), sub: p.price ? `Sells for ${money2(p.price)}` : "", body,
+    actions: [
+      { label: "Cancel", kind: "outlined", onClick: (b, s) => s.close() },
+      { label: "Save cost", kind: "filled", onClick: async (btn, s) => {
+        const v = parseFloat(inp.value);
+        if (isNaN(v) || v < 0) { err.textContent = "Enter a number, like 0.79"; inp.focus(); return; }
+        btn.disabled = true; btn.textContent = "Saving…";
+        try {
+          const r = await apiFetch("/api/costs", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ product: p.product, cost: v }) });
+          if (!r.ok) throw new Error();
+          s.close(); snackbar("Cost saved");
+          await load(root, true, true);
+        } catch (e) { err.textContent = "Couldn't save. Check your connection and try again."; btn.disabled = false; btn.textContent = "Save cost"; }
+      } },
+    ],
+  });
+  setTimeout(() => inp.focus(), 300);
+  inp.onkeydown = e => { if (e.key === "Enter") sh.footer.querySelector(".btn.filled").click(); };
 }
 
 // ---------- More (collapsible) ----------
 function moreSection(d, allSlots, known, S, pl) {
-  const wrap = el(`<div style="margin-top:30px"></div>`);
-  const toggle = el(`<button class="btn ghost" style="display:flex;align-items:center;justify-content:center;gap:8px">More charts <span id="mchev">▾</span></button>`);
-  const body = el(`<div id="more-body" hidden style="margin-top:12px"></div>`);
-  wrap.appendChild(toggle); wrap.appendChild(body);
-  let built = false;
-  toggle.onclick = () => {
-    body.hidden = !body.hidden;
-    toggle.querySelector("#mchev").textContent = body.hidden ? "▾" : "▴";
-    if (body.hidden || built) return;
-    built = true;
+  const wrap = expander({ title: "More charts", sub: "Days, hours, seasons, categories, machines", open: OPEN.has("more"), build: body => {
     const dow = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
     if (S) {
@@ -671,6 +660,7 @@ function moreSection(d, allSlots, known, S, pl) {
     const mc = el(`<div class="card"><div class="ct">Machine vs machine</div><div class="cs">Profit per day and fill right now</div></div>`); const mr = el(`<div class="rows"></div>`);
     d.machines.forEach(m => { const ks = m.slots.filter(s => s.cost != null); const pd = ks.reduce((a, s) => a + (s.perDay || 0), 0); const fill = Math.round(m.slots.reduce((a, s) => a + s.fillPct, 0) / (m.slots.length || 1)); mr.appendChild(el(`<div class="row"><div class="nm">${esc(m.name)}<div class="mt">${m.slots.length} slots · ${fill}% full</div></div><div class="val">$${pd.toFixed(2)}/d</div></div>`)); });
     mc.appendChild(mr); body.appendChild(mc);
-  };
+  } });
+  wrap.querySelector(".exp-h").addEventListener("click", () => wrap.classList.contains("open") ? OPEN.add("more") : OPEN.delete("more"));
   return wrap;
 }

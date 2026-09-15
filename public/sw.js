@@ -8,17 +8,18 @@
 // A background update keeps the cached shell fresh: every load we quietly
 // re-fetch the shell and store the new copy for next time.
 
-const CACHE = "tv-v41";
+const CACHE = "tv-v50";
 const SHELL = [
   "./", "./index.html", "./app.js", "./data.js", "./closet.js",
-  "./company.js", "./chat.js", "./api.js", "./manifest.webmanifest",
+  "./company.js", "./chat.js", "./api.js", "./ui.js", "./manifest.webmanifest",
   "./icons/icon-192.png", "./icons/icon-512.png",
 ];
 
 self.addEventListener("install", e => {
   e.waitUntil(
     caches.open(CACHE)
-      .then(c => Promise.allSettled(SHELL.map(u => c.add(u))))
+      // cache:"reload" skips the browser's HTTP cache so a new version is really new
+      .then(c => Promise.allSettled(SHELL.map(u => c.add(new Request(u, { cache: "reload" })))))
       .then(() => self.skipWaiting())
   );
 });

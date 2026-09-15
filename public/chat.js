@@ -1,6 +1,7 @@
 // Ask — talk to the brain about the business, with everything it knows in context.
 
 import { apiFetch } from "./api.js";
+import { icon, setTabSub, confirmDialog, snackbar } from "./ui.js";
 
 const el = h => { const t = document.createElement("template"); t.innerHTML = h.trim(); return t.content.firstChild; };
 const LSK = "tv_chat_v1";
@@ -11,31 +12,30 @@ let ROOT = null, injected = false, sending = false;
 function injectStyles() {
   if (injected) return; injected = true;
   document.head.appendChild(el(`<style>
-    .ch-wrap{display:flex;flex-direction:column;gap:12px}
-    .ch-msgs{display:flex;flex-direction:column;gap:10px;min-height:40vh}
-    .ch-b{max-width:88%;padding:12px 14px;border-radius:16px;font-size:14.5px;line-height:1.5;word-wrap:break-word;overflow-wrap:anywhere}
-    .ch-me{align-self:flex-end;background:var(--char);color:#fff;border-bottom-right-radius:5px;white-space:pre-wrap}
-    .ch-ai{align-self:flex-start;background:var(--surface);border:1px solid var(--line);border-bottom-left-radius:5px;box-shadow:var(--shadow)}
-    /* formatted reply content */
-    .ch-ai p{margin:0 0 9px}
-    .ch-ai p:last-child,.ch-ai .ch-l:last-child{margin-bottom:0}
-    .ch-ai strong{font-weight:800;color:var(--ink)}
-    .ch-ai em{font-style:italic}
-    .ch-ai code{background:var(--surface-2);border-radius:5px;padding:1px 5px;font-size:13px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
-    .ch-ai .ch-h{font-weight:800;font-size:14.5px;margin:12px 0 6px;color:var(--ink)}
-    .ch-ai .ch-h:first-child{margin-top:0}
-    .ch-ai .ch-l{margin:0 0 9px;padding-left:20px}
-    .ch-ai .ch-l li{margin:4px 0;padding-left:2px}
-    .ch-ai .ch-l li::marker{color:var(--muted);font-weight:700}
-    .ch-think{align-self:flex-start;color:var(--muted);font-size:13px;padding:8px 4px}
-    .ch-dot{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--muted);margin-right:3px;animation:chb 1.2s infinite}
-    .ch-dot:nth-child(2){animation-delay:.15s}.ch-dot:nth-child(3){animation-delay:.3s}
-    @keyframes chb{0%,60%,100%{opacity:.25}30%{opacity:1}}
-    .ch-bar{position:sticky;bottom:calc(84px + env(safe-area-inset-bottom));background:var(--plane);padding:8px 0 4px;display:flex;gap:8px;align-items:flex-end}
-    .ch-bar textarea{flex:1;resize:none;background:var(--surface);border:1px solid var(--line);color:var(--ink);border-radius:14px;padding:12px 14px;font-size:16px;font-family:inherit;max-height:120px;line-height:1.4}
-    .ch-send{flex:none;width:46px;height:46px;border-radius:14px;border:0;background:var(--char);color:#fff;font-size:20px;cursor:pointer}
-    .ch-send:disabled{opacity:.45;cursor:default}
-    .ch-msgs{padding-bottom:8px}
+    #chat{padding-bottom:88px}
+    .ch-msgs{display:flex; flex-direction:column; gap:8px; padding:8px 0 16px; min-height:40dvh}
+    .ch-b{max-width:85%; padding:10px 16px; font-size:16px; line-height:24px; letter-spacing:.031em; word-wrap:break-word; overflow-wrap:anywhere}
+    .ch-me{align-self:flex-end; background:var(--primary); color:var(--on-primary); border-radius:20px 20px 4px 20px; white-space:pre-wrap}
+    .ch-ai{align-self:flex-start; background:var(--surface-c-high); color:var(--on-surface); border-radius:20px 20px 20px 4px}
+    .ch-ai p{margin:0 0 8px} .ch-ai p:last-child,.ch-ai .ch-l:last-child{margin-bottom:0}
+    .ch-ai strong{font-weight:500}
+    .ch-ai code{background:var(--surface-c-highest); border-radius:4px; padding:1px 5px; font-size:14px; font-family:"Roboto Mono",ui-monospace,monospace}
+    .ch-ai .ch-h{font-size:16px; font-weight:500; margin:12px 0 4px} .ch-ai .ch-h:first-child{margin-top:0}
+    .ch-ai .ch-l{margin:0 0 8px; padding-left:22px} .ch-ai .ch-l li{margin:4px 0}
+    .ch-think{align-self:flex-start; display:flex; gap:4px; padding:14px 16px; background:var(--surface-c-high); border-radius:20px 20px 20px 4px}
+    .ch-dot{width:8px; height:8px; border-radius:50%; background:var(--on-surface-variant); animation:chb 1.2s infinite}
+    .ch-dot:nth-child(2){animation-delay:.15s} .ch-dot:nth-child(3){animation-delay:.3s}
+    @keyframes chb{0%,60%,100%{opacity:.25; transform:none}30%{opacity:1; transform:translateY(-2px)}}
+    .ch-time{align-self:center; font-size:12px; color:var(--on-surface-variant); margin:8px 0}
+    .ch-bar{position:fixed; left:0; right:0; z-index:32; bottom:calc(var(--nav-h) + env(safe-area-inset-bottom)); background:var(--surface); padding:8px 8px 8px 16px; display:flex; gap:8px; align-items:flex-end; max-width:720px; margin:0 auto; box-shadow:0 -1px 0 var(--outline-variant)}
+    body.kbd .ch-bar{bottom:0}
+    #chat[hidden] ~ .ch-bar, body:not(:has(#chat:not([hidden]))) .ch-bar{display:none}
+    .ch-bar textarea{flex:1; min-height:48px; max-height:140px; resize:none; border:0; border-radius:24px; background:var(--surface-c-high); color:var(--on-surface); padding:12px 16px; font-size:16px; line-height:24px}
+    .ch-bar textarea:focus{box-shadow:inset 0 0 0 2px var(--primary)}
+    .ch-send{width:48px; height:48px; flex:none; border:0; border-radius:var(--r-full); background:var(--primary); color:var(--on-primary); display:inline-flex; align-items:center; justify-content:center; cursor:pointer}
+    .ch-send:disabled{background:var(--surface-c-highest); color:var(--on-surface-variant); opacity:.6}
+    .ch-send .ic{width:22px; height:22px}
+    .ch-clear{display:flex; justify-content:center}
   </style>`));
 }
 
@@ -98,29 +98,43 @@ export function renderChat(rootEl) {
 
 function paint() {
   ROOT.innerHTML = "";
-  ROOT.appendChild(el(`<h2>Ask</h2>`));
+  setTabSub("chat", "Sees live sales, costs, inventory and the books");
   const wrap = el(`<div class="ch-wrap"></div>`);
-  const list = el(`<div class="ch-msgs"></div>`);
+  const list = el(`<div class="ch-msgs" role="log" aria-live="polite"></div>`);
 
   if (!msgs.length) {
-    list.appendChild(el(`<div class="ch-b ch-ai">I'm running the desk. I can see both machines live, every sale, your costs, closet, and the books.<br><br>Ask me anything — what to change, what's leaking money, what to buy.</div>`));
+    list.appendChild(el(`<div class="ch-b ch-ai">I can see both machines live, every sale, your costs, inventory, and the books.<br><br>Ask what to change, what's losing money, or what to buy.</div>`));
   }
   msgs.forEach(m => list.appendChild(bubble(m.role, m.content)));
   wrap.appendChild(list);
+  if (msgs.length) {
+    const clr = el(`<div class="ch-clear"><button class="btn text inline">Clear conversation</button></div>`);
+    clr.querySelector("button").onclick = async () => {
+      if (sending) return;
+      const ok = await confirmDialog({ title: "Clear this conversation?", body: "Messages are removed from this phone.", confirm: "Clear", danger: true });
+      if (!ok) return;
+      msgs = []; save(); paint(); snackbar("Conversation cleared");
+    };
+    wrap.appendChild(clr);
+  }
 
-  const bar = el(`<div class="ch-bar"></div>`);
-  const ta = el(`<textarea rows="1" placeholder="Ask about the business…"></textarea>`);
-  const btn = el(`<button class="ch-send">↑</button>`);
-  ta.oninput = () => { ta.style.height = "auto"; ta.style.height = Math.min(120, ta.scrollHeight) + "px"; };
-  ta.onkeydown = e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); if (ta.value.trim()) send(ta.value.trim()); } };
+  let bar = document.querySelector(".ch-bar");
+  if (bar) bar.remove();
+  bar = el(`<div class="ch-bar"></div>`);
+  const ta = el(`<textarea rows="1" placeholder="Ask about the business" aria-label="Message"></textarea>`);
+  const btn = el(`<button class="ch-send" aria-label="Send" disabled>${icon("send")}</button>`);
+  const sync = () => { btn.disabled = sending || !ta.value.trim(); };
+  ta.oninput = () => { ta.style.height = "auto"; ta.style.height = Math.min(140, ta.scrollHeight) + "px"; sync(); };
+  ta.onkeydown = e => { if (e.key === "Enter" && !e.shiftKey && !matchMedia("(pointer:coarse)").matches) { e.preventDefault(); if (ta.value.trim()) send(ta.value.trim()); } };
   btn.onclick = () => { if (ta.value.trim()) send(ta.value.trim()); };
   bar.appendChild(ta); bar.appendChild(btn);
-
-  wrap.appendChild(bar);
+  document.body.appendChild(bar);
   ROOT.appendChild(wrap);
+  ROOT._sync = sync;
   ROOT._list = list; ROOT._ta = ta; ROOT._btn = btn;
   // If a reply is still in flight (tab was switched away and back), show it.
   if (sending) { btn.disabled = true; list.appendChild(thinkingEl()); }
+  sync();
   // Open at the BOTTOM of the feed (latest message). The section just un-hid, so
   // wait for layout to settle before scrolling — double rAF + a fallback tick.
   const toBottom = () => window.scrollTo(0, document.body.scrollHeight);
@@ -129,7 +143,7 @@ function paint() {
 }
 
 function thinkingEl() {
-  return el(`<div class="ch-think"><span class="ch-dot"></span><span class="ch-dot"></span><span class="ch-dot"></span> thinking…</div>`);
+  return el(`<div class="ch-think" aria-label="Thinking"><span class="ch-dot"></span><span class="ch-dot"></span><span class="ch-dot"></span></div>`);
 }
 
 async function send(text) {
@@ -166,7 +180,7 @@ async function send(text) {
   if (listNow && listNow.isConnected) {
     listNow.querySelectorAll(".ch-think").forEach(t => t.remove());
     listNow.appendChild(bubble("assistant", reply));
-    if (ROOT._btn) ROOT._btn.disabled = false;
+    if (ROOT._sync) ROOT._sync();
     window.scrollTo(0, document.body.scrollHeight);
   }
 }
