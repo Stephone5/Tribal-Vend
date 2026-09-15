@@ -65,31 +65,6 @@ abRefresh.onclick = async () => {
   try { await fn(); } finally { abRefresh.classList.remove("spin"); abRefresh.disabled = false; }
 };
 
-// theme
-(function theme() {
-  const btn = $("#themeBtn");
-  const metaColor = () => {
-    const bg = getComputedStyle(document.documentElement).getPropertyValue("--surface").trim();
-    // swap in a fresh tag: Android Chrome repaints the status bar reliably on a new node
-    document.querySelectorAll('meta[name="theme-color"]').forEach(m => m.remove());
-    const m = document.createElement("meta"); m.name = "theme-color"; m.id = "themeColor"; m.content = bg;
-    document.head.appendChild(m);
-    document.documentElement.style.colorScheme = document.documentElement.getAttribute("data-theme");
-  };
-  const paint = () => {
-    const dark = document.documentElement.getAttribute("data-theme") === "dark";
-    btn.innerHTML = icon(dark ? "sun" : "moon");
-    btn.setAttribute("aria-label", dark ? "Switch to light mode" : "Switch to dark mode");
-    metaColor();
-  };
-  btn.onclick = () => {
-    const next = document.documentElement.getAttribute("data-theme") === "dark" ? "light" : "dark";
-    document.documentElement.setAttribute("data-theme", next);
-    try { localStorage.setItem("tv_theme", next); } catch (e) {}
-    haptic(4); paint();
-  };
-  paint();
-})();
 
 // ============================================================ restock
 let LIVE = null;

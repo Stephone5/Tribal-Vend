@@ -3,12 +3,13 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
-<meta name="theme-color" id="themeColor" content="#111418">
+<meta name="theme-color" content="#f8f9ff" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#111418" media="(prefers-color-scheme: dark)">
 <meta name="color-scheme" content="light dark">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icons/icon-192.png">
 <title>Tribal Vend</title>
-<script>/* theme before first paint: saved choice, else follow the phone */try{var t=localStorage.getItem("tv_theme");if(!t)t=matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light";document.documentElement.setAttribute("data-theme",t);document.getElementById("themeColor").content=t==="dark"?"#111418":"#f8f9ff";document.documentElement.style.colorScheme=t;}catch(e){}</script>
+<script>/* follow the phone's light/dark setting: Android colors the status bar from it, so the app must match */(function(){var q=matchMedia("(prefers-color-scheme: dark)");function set(){document.documentElement.setAttribute("data-theme",q.matches?"dark":"light");}set();q.addEventListener("change",set);try{localStorage.removeItem("tv_theme")}catch(e){}})();</script>
 <style>
 /* =====================================================================
    Tribal Vend — Material 3. Every value traces to DESIGN.md.
@@ -439,7 +440,6 @@ body.kbd #snack{bottom:12px}
   <div class="appbar-in">
     <div class="appbar-title"><div class="t" id="abTitle">Business</div><div class="s" id="abSub">Tribal Vend</div></div>
     <button class="icon-btn" id="abRefresh" aria-label="Refresh"></button>
-    <button class="icon-btn" id="themeBtn" aria-label="Switch light or dark"></button>
   </div>
 </header>
 
