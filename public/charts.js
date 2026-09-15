@@ -26,6 +26,7 @@ export function palette() {
 const live = new Set();
 // Re-draw every chart when the phone switches light/dark.
 matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => setTimeout(() => live.forEach(c => c.redraw()), 50));
+addEventListener("tv-theme", () => setTimeout(() => live.forEach(c => c.redraw()), 50));
 
 // mountChart(host, build, { height, readout(params) -> html, onTap(index) })
 // build(pal) returns an ECharts option. The readout sits above the chart; it

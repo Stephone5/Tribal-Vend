@@ -1,0 +1,7 @@
+[
+  { "version": "61", "date": "2026-09-15", "title": "Earl joins the app", "notes": ["The Ask tab is now Earl, the mentor from the Bridge, with his own memory.", "Earl sees your live sales, restocks, costs, inventory, loan and books on every message.", "Action steps you commit to are saved and can be checked off.", "New Settings button: light or dark, sign out, version history, install."] },
+  { "version": "59", "date": "2026-09-15", "title": "Plain answers on Ask", "notes": ["Ask uses current Oklahoma facts and plain language.", "Cash questions count the partial month and unpaid loan payments correctly."] },
+  { "version": "58", "date": "2026-09-15", "title": "New Business screen", "notes": ["Sales since your last restock, compared to the same hours after your last 4 restocks.", "Every chart is interactive: drag to read it, tap weekly bars for top sellers.", "Profit & loss, Balance sheet with loan payoff, and Inventory loss open as full panels.", "The loan reads straight from your Google Sheet."] },
+  { "version": "53", "date": "2026-09-15", "title": "Status bar follows your phone", "notes": ["The top bar color follows the phone's light or dark setting."] },
+  { "version": "50", "date": "2026-09-15", "title": "Rebuilt with Material 3", "notes": ["Every screen rebuilt to Google's current Android design standard.", "Panels, dialogs, back gesture, and a Save and Cancel bar on Inventory.", "New versions download fresh and show a Reload message."] }
+]

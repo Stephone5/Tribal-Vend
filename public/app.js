@@ -3,7 +3,7 @@ import { renderCloset, closetTabHidden, refreshCloset } from "./closet.js";
 import { renderCompany, refreshCompany, companyAfterRestock } from "./company.js";
 import { renderChat } from "./chat.js";
 import { apiFetch, setPass } from "./api.js";
-import { el, esc, icon, sheet, confirmDialog, snackbar, pullToRefresh, segmented, skel, haptic, setBackFallback, setAppbarSub, setTabSub, getTabSub } from "./ui.js";
+import { el, esc, icon, sheet, confirmDialog, snackbar, pullToRefresh, segmented, expander, skel, haptic, setBackFallback, setAppbarSub, setTabSub, getTabSub } from "./ui.js";
 
 const $ = (s, r = document) => r.querySelector(s);
 // The app manages scroll per tab; the browser restoring it on back/forward fights that.
@@ -14,7 +14,7 @@ const TABS = {
   company: { title: "Business", render: () => renderCompany($("#company")), refresh: () => refreshCompany($("#company")) },
   runs:    { title: "Restock",  render: () => renderRuns(),                 refresh: () => renderRuns(true) },
   closet:  { title: "Inventory",render: () => renderCloset($("#closet")),   refresh: () => refreshCloset() },
-  chat:    { title: "Ask",      render: () => renderChat($("#chat")),       refresh: null },
+  chat:    { title: "Earl",     render: () => renderChat($("#chat")),       refresh: null },
 };
 let current = "company";
 const scrollByTab = {};
@@ -297,19 +297,83 @@ async function ensureUnlocked() {
 }
 
 // ============================================================ install
-let deferredInstall = null;
+// The browser only offers installation (beforeinstallprompt) when the app is
+// NOT installed on this device. On top of that we check: running as the
+// installed app, and getInstalledRelatedApps (Chrome) for an installed copy.
+let deferredInstall = null, installedHere = false;
 addEventListener("beforeinstallprompt", e => { e.preventDefault(); deferredInstall = e; });
-function maybeOfferInstall() {
-  if (matchMedia("(display-mode: standalone)").matches) return;
-  if (localStorage.getItem("tv_install_done") === "1") return;
-  setTimeout(() => {
-    if (!deferredInstall) return;
-    snackbar("Install Tribal Vend on your home screen", {
-      action: "Install",
-      onAction: async () => { localStorage.setItem("tv_install_done", "1"); deferredInstall.prompt(); await deferredInstall.userChoice.catch(() => {}); deferredInstall = null; },
-    });
-  }, 2500);
+addEventListener("appinstalled", () => { installedHere = true; deferredInstall = null; });
+async function installState() {
+  if (matchMedia("(display-mode: standalone)").matches || navigator.standalone) return "running-installed";
+  if (installedHere) return "installed";
+  try {
+    if (navigator.getInstalledRelatedApps) {
+      const apps = await navigator.getInstalledRelatedApps();
+      if (apps && apps.length) return "installed";
+    }
+  } catch (e) {}
+  return deferredInstall ? "can-install" : "unavailable";
 }
+
+// ============================================================ settings
+const THEME_KEY = "tv_theme_choice";
+async function openSettings() {
+  const body = el(`<div></div>`);
+  let choice = "system";
+  try { choice = localStorage.getItem(THEME_KEY) || "system"; } catch (e) {}
+
+  body.appendChild(el(`<h2 class="sec-h" style="margin-top:8px">Appearance</h2>`));
+  body.appendChild(segmented([["system", "Phone setting"], ["light", "Light"], ["dark", "Dark"]], choice, v => {
+    try { localStorage.setItem(THEME_KEY, v); } catch (e) {}
+    window.tvApplyTheme && window.tvApplyTheme();
+    dispatchEvent(new Event("tv-theme"));
+  }));
+
+  const inst = el(`<div></div>`);
+  body.appendChild(inst);
+  installState().then(st => {
+    if (st !== "can-install") return; // already on this device, or this browser can't install
+    inst.appendChild(el(`<h2 class="sec-h">This device</h2>`));
+    const b = el(`<button class="btn filled">${icon("download")}Install Tribal Vend</button>`);
+    b.onclick = async () => {
+      if (!deferredInstall) return;
+      deferredInstall.prompt();
+      const r = await deferredInstall.userChoice.catch(() => null);
+      deferredInstall = null;
+      if (r && r.outcome === "accepted") { installedHere = true; inst.innerHTML = ""; snackbar("Installed"); }
+      else b.remove();
+    };
+    inst.appendChild(b);
+  });
+
+  body.appendChild(el(`<h2 class="sec-h">Version history</h2>`));
+  const vh = el(`<div class="rows"><div class="row"><div class="nm">Loading…</div></div></div>`);
+  body.appendChild(vh);
+  fetch("changelog.json", { cache: "no-store" }).then(r => r.json()).then(list => {
+    vh.innerHTML = "";
+    list.forEach((v, i) => {
+      vh.appendChild(expander({
+        title: `${v.title}${i === 0 ? " (this version)" : ""}`,
+        sub: `Version ${esc(v.version)} · ${new Date(v.date + "T12:00:00").toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" })}`,
+        build: b => b.appendChild(el(`<ul style="margin:0;padding-left:20px">${v.notes.map(n => `<li style="margin:4px 0">${esc(n)}</li>`).join("")}</ul>`)),
+      }));
+    });
+  }).catch(() => { vh.innerHTML = `<div class="row"><div class="nm">Couldn't load version history.</div></div>`; });
+
+  body.appendChild(el(`<h2 class="sec-h">Account</h2>`));
+  const out = el(`<button class="btn outlined danger">${icon("logout")}Sign out</button>`);
+  out.onclick = async () => {
+    const ok = await confirmDialog({ title: "Sign out?", body: "This removes the passcode from this device. You'll need it to get back in.", confirm: "Sign out", danger: true });
+    if (!ok) return;
+    try { localStorage.removeItem("tv_pass"); } catch (e) {}
+    location.reload();
+  };
+  body.appendChild(out);
+
+  sheet({ title: "Settings", body, full: true });
+}
+$("#abSettings").innerHTML = icon("settings");
+$("#abSettings").onclick = openSettings;
 
 // ============================================================ keyboard
 // While typing, the nav bar steps aside (Chrome resizes the page above the keyboard).
@@ -334,5 +398,4 @@ addEventListener("tv-update", () => {
   rendered.add("company");
   $("#abRefresh").hidden = false;
   renderCompany($("#company"));
-  maybeOfferInstall();
 })();

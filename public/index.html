@@ -9,7 +9,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icons/icon-192.png">
 <title>Tribal Vend</title>
-<script>/* follow the phone's light/dark setting: Android colors the status bar from it, so the app must match */(function(){var q=matchMedia("(prefers-color-scheme: dark)");function set(){document.documentElement.setAttribute("data-theme",q.matches?"dark":"light");}set();q.addEventListener("change",set);try{localStorage.removeItem("tv_theme")}catch(e){}})();</script>
+<script>/* theme: "system" follows the phone (default), or a saved light/dark choice from Settings */(function(){var q=matchMedia("(prefers-color-scheme: dark)");function apply(){var c="system";try{c=localStorage.getItem("tv_theme_choice")||"system"}catch(e){}var t=c==="system"?(q.matches?"dark":"light"):c;document.documentElement.setAttribute("data-theme",t);document.querySelectorAll('meta[name="theme-color"]').forEach(function(m){if(c==="system"){m.content=m.media.indexOf("dark")>-1?"#111418":"#f8f9ff"}else{m.content=t==="dark"?"#111418":"#f8f9ff"}});}window.tvApplyTheme=apply;apply();q.addEventListener("change",apply);})();</script>
 <style>
 /* =====================================================================
    Tribal Vend — Material 3. Every value traces to DESIGN.md.
@@ -244,6 +244,7 @@ svg.chart text{font-family:inherit}
 .btn.text{background:transparent; color:var(--primary); width:auto; min-height:48px; padding:0 12px; margin:0}
 .btn.danger{background:var(--error); color:var(--on-error)}
 .btn.text.danger{background:transparent; color:var(--error)}
+.btn.outlined.danger{background:transparent; color:var(--error); box-shadow:inset 0 0 0 1px var(--error)}
 .btn.inline{width:auto; display:inline-flex}
 .btn-row{display:flex; gap:8px; margin-top:12px}
 .btn-row .btn{margin:0; flex:1}
@@ -460,6 +461,7 @@ body.kbd #snack{bottom:12px}
   <div class="appbar-in">
     <div class="appbar-title"><div class="t" id="abTitle">Business</div><div class="s" id="abSub">Tribal Vend</div></div>
     <button class="icon-btn" id="abRefresh" aria-label="Refresh"></button>
+    <button class="icon-btn" id="abSettings" aria-label="Settings"></button>
   </div>
 </header>
 
@@ -482,7 +484,7 @@ body.kbd #snack{bottom:12px}
       <span class="ind"><svg class="ic" viewBox="0 0 24 24"><path d="M3 8l9-5 9 5v8l-9 5-9-5z"/><path d="M3 8l9 5 9-5M12 13v8"/></svg></span>Inventory
     </button>
     <button data-tab="chat">
-      <span class="ind"><svg class="ic" viewBox="0 0 24 24"><path d="M20 15a2 2 0 0 1-2 2H8l-4 4V6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2z"/></svg></span>Ask
+      <span class="ind"><svg class="ic" viewBox="0 0 24 24"><path d="M20 15a2 2 0 0 1-2 2H8l-4 4V6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2z"/></svg></span>Earl
     </button>
   </div>
 </nav>
