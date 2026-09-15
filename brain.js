@@ -7,7 +7,7 @@ import { SLOTS, MONTHLY, FIXED_COSTS, WINDOW_LABEL } from "./finance.js";
 
 const MODEL = process.env.BRAIN_MODEL || "claude-opus-5";
 
-const SYSTEM = `You are the operations brain for Tribal Amenities, a two-machine vending route in State College, PA, owned by Stephen. You are head of pricing, planogram, and reordering. Stephen (or a hired route runner) is the hands and feet: he restocks, buys, transports, and pays bills. Your one job is to make the route as profitable as possible — kill what does not work, double down on what does.
+const SYSTEM = `You are the operations brain for Tribal Vend, a vending business in Oklahoma City owned by Stephen Barton. It started in Pennsylvania and moved to Oklahoma in August 2026. It owns two machines: Meals & Drinks (the refrigerated machine, at American Elevator, 1905 S Harvard, OKC) and Snacks & Candy. Which machines are running right now is in the DATA block. You are head of pricing, planogram, and reordering. Stephen (or a hired route runner) is the hands and feet: he restocks, buys, transports, and pays bills. Your one job is to make the route as profitable as possible — kill what does not work, double down on what does.
 
 Operating doctrine:
 - The metric that matters is gross margin DOLLARS per slot per day. A slot is scarce real estate; the only question is what it earns per day it is occupied.
@@ -74,23 +74,28 @@ function businessContext() {
 // ---- Conversational mode: Stephen asking the desk questions ----
 const ASK_SYSTEM = `${SYSTEM}
 
-You are talking directly with Stephen, the owner. He is the CEO; you run the desk — pricing, planogram, purchasing, and the numbers. Speak like a sharp operator who already knows his business, not like a chatbot.
+You are talking directly with Stephen, the owner.
 
-Rules for these conversations:
-- Answer the question asked, then stop. No preamble, no restating the question, no "great question".
-- Lead with the answer or the number. Detail after.
-- Every figure you cite must come from the DATA block. Never invent sales, costs, or dates. If the data doesn't cover something, say so in one line.
-- Give a recommendation, not a menu of options. If you're unsure, say what you'd do and why.
-- Keep it short — a few sentences unless he asks for depth. Use plain language, no jargon, no bullet-point walls unless a list is genuinely the clearest form.
-- Money in dollars, plainly. Round sensibly.
-- Weeks run Sunday to Saturday.
-- He is winding down the Pennsylvania route and relocating the machines to Oklahoma, where locations are lined up. Factor that into advice: don't tell him to invest in PA growth or buy deep inventory he'd have to move.`;
+How to answer:
+- Answer the question asked, then stop. Lead with the answer or the number.
+- Plain words a normal person uses. No finance or business jargon: say "money going out each month" instead of "burn" or "run rate", "payments you're behind on" instead of "arrears", "what would help most" instead of "lever". If a term needs special knowledge, use the everyday phrase.
+- Never write "not X, it's Y" or any version of that flip. Never say "worth sitting with".
+- Short: a few sentences unless he asks for depth. Money in dollars, rounded sensibly.
+
+Using the data:
+- Every figure must come from the DATA block. Never invent numbers, dates, or facts about his situation (what a bill is for, whether a machine is idle, what he plans to do). If you're not sure what something is, say what the data calls it.
+- When the data is missing something the answer needs, say exactly what's missing in one line, then give the best answer the data does support and label which parts are estimates. Don't refuse and then give a number anyway.
+- Do the math carefully and show the few numbers it rests on. Don't count the same cost twice: a month's NET already subtracts the monthly bills and the loan interest. Loan principal is separate money out and is NOT in net.
+- The current month is partial. Never treat it as a full month; say how many days it covers.
+- Don't add advice he didn't ask for. The one exception is something urgent in the data (like a price below cost), in one sentence. A machine that isn't running is his decision; don't lecture about it.
+- For cash questions, NET is a profit figure. Cash is: last bank balance, plus money left after product each month, minus the cash money-out figure each month. Say which months you counted.
+- Selling weeks run Tuesday through Monday.`;
 
 function askContext(live, closet) {
   const lines = [];
   const S = live?.sales;
   if (S) {
-    lines.push(`SALES (live from AirVend — ${S.txnCount} transactions covering ${S.spanDays} days${S.firstSale ? `, back to ${S.firstSale.slice(0, 10)}` : ""}. Weeks run Sun-Sat.)`);
+    lines.push(`SALES (live from AirVend — ${S.txnCount} transactions covering ${S.spanDays} days${S.firstSale ? `, back to ${S.firstSale.slice(0, 10)}` : ""}. Weeks run Tue-Mon.)`);
     lines.push(`This week so far: $${S.thisWeek.revenue.toFixed(2)} revenue, $${S.thisWeek.profit.toFixed(2)} profit, ${S.thisWeek.units} units`);
     lines.push(`Last week total: $${S.lastWeek.revenue.toFixed(2)} revenue, $${S.lastWeek.profit.toFixed(2)} profit, ${S.lastWeek.units} units`);
     lines.push(`This month: $${S.thisMonth.revenue.toFixed(2)} rev / $${S.thisMonth.profit.toFixed(2)} profit. Last month: $${S.lastMonth.revenue.toFixed(2)} rev / $${S.lastMonth.profit.toFixed(2)} profit`);
@@ -117,8 +122,21 @@ function askContext(live, closet) {
   }
   const pl = live?.pl || [];
   if (pl.length) {
-    lines.push(`\nP&L, EVERY MONTH ON RECORD (revenue / product cost / gross / fixed / net):`);
-    pl.forEach(p => lines.push(`${p.m}: $${Math.round(p.revenue)} / $${Math.round(p.cogs)} / $${Math.round(p.gross)} / $${Math.round(p.fixed)} / $${Math.round(p.net)} (bank balance $${p.balance})`));
+    const now = new Date(new Date().toLocaleString("en-US", { timeZone: "America/Chicago" }));
+    const curLabel = now.toLocaleString("en-US", { month: "short" }) + " " + String(now.getFullYear()).slice(2);
+    const daysIn = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+    lines.push(`\nPROFIT & LOSS BY MONTH. Columns: sales / product cost / left after product / monthly bills + loan interest / NET. Net = left after product minus bills and loan interest. Loan principal is not in net.`);
+    pl.forEach(p => lines.push(`${p.m}: $${Math.round(p.revenue)} / $${Math.round(p.cogs)} / $${Math.round(p.gross)} / $${Math.round(p.fixed)} / $${Math.round(p.net)}${p.m === curLabel ? ` (PARTIAL MONTH: day ${now.getDate()} of ${daysIn}; bills are counted for the whole month)` : ""}`));
+    const banked = (live.monthly || []).filter(m => m.balance != null);
+    const lastBank = banked[banked.length - 1];
+    lines.push(`\nCASH IN THE BANK: the bank account is not connected to the app. Last balance on file: $${lastBank ? lastBank.balance : "unknown"} at the end of ${lastBank ? lastBank.m : "unknown"}. No bank data after that, so any cash figure after ${lastBank ? lastBank.m : "then"} is an estimate.`);
+  }
+  const R = live?.restock;
+  if (R && !R.error) {
+    const running = (R.machines || []).map(m => m.name);
+    const parked = (live.machines || []).map(m => m.name).filter(n => !running.includes(n));
+    lines.push(`\nMACHINES RUNNING (restocked in the last 21 days): ${running.join(", ") || "none"}.${parked.length ? ` Not restocked in over 21 days: ${parked.join(", ")}.` : ""}`);
+    lines.push(`Since the last restock (${R.restockedAt.slice(0, 16).replace("T", " ")}): $${R.revenue.toFixed(2)} sales, $${R.profit.toFixed(2)} profit, ${R.units} sold${R.pct != null ? `; ${R.pct >= 0 ? "+" : ""}${R.pct.toFixed(0)}% vs the same hours after the previous ${R.priorCount} restocks` : ""}.`);
   }
   if (S?.months?.length) {
     lines.push(`\nMACHINE SALES BY MONTH (from real transactions, first sale ${S.firstSale ? S.firstSale.slice(0, 10) : "n/a"}) — use this for seasonality:`);
@@ -130,8 +148,15 @@ function askContext(live, closet) {
     lines.push(`month | ${cats.join(" | ")}`);
     S.monthlyByCategory.forEach(r => lines.push(`${r.m} | ${cats.map(c => r[c] || 0).join(" | ")}`));
   }
-  if (live?.fixedCosts) lines.push(`\nFIXED MONTHLY COSTS: ${live.fixedCosts.map(c => `${c.name} $${c.amount.toFixed(2)}`).join("; ")}`);
-  if (live?.loan) lines.push(`\nLOAN: ${JSON.stringify(live.loan)}`);
+  if (live?.fixedCosts) lines.push(`\nMONTHLY BILLS (already subtracted in each month's net): ${live.fixedCosts.map(c => `${c.name}${c.note ? ` (${c.note})` : ""} $${c.amount.toFixed(2)}`).join("; ")}`);
+  const L = live?.loan;
+  if (L) {
+    lines.push(`\nWENDLE LOAN (from Stephen's Google Sheet${L.sheetError ? `; NOTE: couldn't read the sheet (${L.sheetError}), using ${L.stale ? "the last copy read" : "the built-in schedule"}` : ""}):`);
+    lines.push(`Owed now $${(L.balance || 0).toFixed(2)} of $${L.principal || 13000}. Monthly payment $${(L.payment || 0).toFixed(2)} (part interest, part principal). Paid through payment ${L.paidThroughN} (${L.paidThrough || "none"}). Payments due but not marked paid in the sheet: ${L.behind ?? "unknown"}. Final payment ${L.payoffMonth || "unknown"} (payment ${L.payoffN}, $${L.finalAmount}). Interest still to pay: $${Math.round(L.interestLeft || 0)}.`);
+    const bills = (live.fixedCosts || []).reduce((a, c) => a + c.amount, 0);
+    lines.push(`MONEY OUT EACH MONTH IN CASH (use this for any cash or runway question): bills $${bills.toFixed(2)} + full loan payment $${(L.payment || 0).toFixed(2)} = $${(bills + (L.payment || 0)).toFixed(2)}. The loan payment already includes its interest, so don't add interest again. For months after the last bank balance, subtract a loan payment only if the sheet marks it paid (paid through ${L.paidThrough || "none"}). Payments not marked paid haven't left the bank; they are money still owed, so list them separately and never subtract them twice.`);
+    if (L.schedule) lines.push(`Next 3 payments: ${L.schedule.filter(r => r.n > L.paidThroughN).slice(0, 3).map(r => `#${r.n} ${r.due}: $${r.principal.toFixed(2)} principal + $${r.interest.toFixed(2)} interest`).join("; ")}`);
+  }
   return lines.join("\n");
 }
 
