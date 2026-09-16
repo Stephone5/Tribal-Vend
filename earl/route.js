@@ -14,6 +14,7 @@ import * as setup from "./db-setup.js";
 import { QUESTIONS, STAGE_FRAMING, STAGE_COMPLETE, STAGE_BOUNDS, getQuestionByField } from "./intake-questions.js";
 import { buildMemoryContext, describeGap } from "./memory/context.js";
 import { buildPrefill } from "./prefill.js";
+import { findProspects, countsByAnchor, setProspectStatus, seedLeads } from "./leads.js";
 
 const _inFlight = new Set();
 function runBackground(label, fn) {
@@ -332,6 +333,33 @@ export function mountEarl(app, { rateLimit, getBusinessData, getLive }) {
     if (!text) return res.status(400).json({ error: "bad_request", message: "Write the step first." });
     try { res.json({ step: await db.saveActionStep(MEMBER_ID, text, null, req.body?.target_date || null, req.body?.benchmark_id || null) }); }
     catch (e) { res.status(502).json({ error: "steps_failed", message: e.message }); }
+  });
+
+
+  // ---- leads (the prospect lists) ----
+  app.get("/api/leads", async (req, res) => {
+    if (!earlDbReady()) return notReady(res);
+    try {
+      const q = req.query;
+      const rows = await findProspects({
+        anchor: q.anchor || undefined,
+        category: q.category || undefined,
+        maxMiles: q.maxMiles ? Number(q.maxMiles) : undefined,
+        status: q.status ? String(q.status).split(",") : undefined,
+        hasPhone: q.hasPhone === "1",
+        search: q.search || undefined,
+        limit: Number(q.limit) || 60,
+      });
+      res.json({ rows, counts: await countsByAnchor() });
+    } catch (e) { res.status(502).json({ error: "leads_failed", message: e.message }); }
+  });
+
+  app.post("/api/leads/:id/status", async (req, res) => {
+    if (!earlDbReady()) return notReady(res);
+    const { status, my_note } = req.body || {};
+    if (!["new", "called", "interested", "no", "later"].includes(status)) return res.status(400).json({ error: "bad_request", message: "Unknown status." });
+    try { res.json({ prospect: await setProspectStatus(req.params.id, status, my_note) }); }
+    catch (e) { res.status(502).json({ error: "leads_failed", message: e.message }); }
   });
 
 }

@@ -9,6 +9,7 @@ import { fileURLToPath } from "url";
 import { runBrain, askContext } from "./brain.js";
 import { mountEarl } from "./earl/route.js";
 import { startMemoryWorker } from "./earl/memory/worker.js";
+import { seedLeads } from "./earl/leads.js";
 import { writeOnHand, getMachineLive } from "./airvend.js";
 import { costFor, costInfo, setCostOverrides, categoryFor, seasonCategoryFor, SOLD_BY_SLOT, SALES_WINDOW, MONTHLY, FIXED_COSTS, activeFixedCosts, buildPL, INVENTORY_PURCHASES, INVENTORY_ON_HAND_MAY26, PURCHASE_DATA_THROUGH } from "./catalog.js";
 import { CLOSET_SEED } from "./closet-seed.js";
@@ -603,4 +604,5 @@ app.listen(port, () => {
   // Warm the cache on startup so the first real open is instant.
   loadCostOverrides().then(() => refreshLive()).catch(() => {});
   startMemoryWorker();
+  seedLeads().catch(e => console.error("[leads] seed failed:", e.message));
 });

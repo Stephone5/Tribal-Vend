@@ -17,6 +17,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { scrubTells } from "./antitells.js";
 import { saveActionStep, getActionStep, updateActionStepStatus } from "./db.js";
 import { completeGoal } from "./db-setup.js";
+import { findProspects, searchResearch } from "./leads.js";
 
 const DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), "system");
 const read = f => fs.readFileSync(path.join(DIR, f), "utf8");
@@ -111,6 +112,26 @@ const TOOLS = [
     }, required: ["action_step_id", "outcome"] },
   },
   {
+    name: "find_prospects",
+    description: "Search the member's own location prospect lists — businesses within 3.5 miles of his shop (the Meals & Drinks machine at American Elevator) or his house in northwest OKC, scored on how good a vending placement they are. Call this when he asks who to call, where to put a machine, or about a specific business. Returns a handful of rows, so ask for what you actually need. Never invent a business that isn't returned.",
+    input_schema: { type: "object", properties: {
+      anchor: { type: "string", enum: ["shop", "home"], description: "Which list. Leave out for both." },
+      category: { type: "string", description: "Category words to match, e.g. 'clinic', 'auto', 'hotel', 'industrial'." },
+      maxMiles: { type: "number", description: "Only places within this many miles of that anchor." },
+      status: { type: "string", enum: ["new", "called", "interested", "no", "later"], description: "Only places in this state. 'new' means he hasn't called them." },
+      hasPhone: { type: "boolean", description: "Only places with a verified phone number." },
+      search: { type: "string", description: "Name or note text to match." },
+      limit: { type: "integer", description: "How many rows, at most 20." },
+    } },
+  },
+  {
+    name: "search_research",
+    description: "Search the member's own research files: Oklahoma vending law and licensing, other OKC operators, what working vendors say, anyone selling a route or asking for a machine, and the scoring method behind his prospect lists. Call this when the answer depends on that research rather than on his numbers.",
+    input_schema: { type: "object", properties: {
+      query: { type: "string", description: "What to look for, in a few words." },
+    }, required: ["query"] },
+  },
+  {
     name: "complete_goal",
     description: "Marks one of the member's goals complete. NEVER call this on your own judgment. The sequence is: the member says (or their action steps show) the goal is reached → you ask them directly, in your own words, whether to mark it complete and move to the next one → they say yes → THEN you call this. Use the exact benchmark_id from your context. If they hesitate or say not yet, do not call it.",
     input_schema: { type: "object", properties: {
@@ -163,6 +184,18 @@ export async function commanderChat(message, sessionContext, conversationHistory
           if (step && step.user_id === persist.userId) { await updateActionStepStatus(block.input.action_step_id, block.input.outcome); content = "Action step updated."; }
           else content = "No action step with that id.";
         } catch (e) { console.error("[earl] mark_action_step_complete:", e.message); content = "The action step could not be updated: " + e.message; }
+      }
+      else if (block.name === "find_prospects") {
+        try {
+          const rows = await findProspects({ ...block.input, limit: Math.min(block.input.limit || 8, 20) });
+          content = rows.length ? rows.map(r => `${r.name} — ${r.category || ""}${r.headcount ? `, ${r.headcount}` : ""} · ${r.miles != null ? r.miles + " mi from the " + r.anchor : r.anchor} · nearest food ${r.food_ft != null ? r.food_ft + " ft" : "unknown"} · score ${r.score ?? "n/a"} · ${r.phone || "no verified phone"} · ${r.addr || "no address on file"} · status ${r.status}${r.note ? ` · ${r.note}` : ""}${r.my_note ? ` · his note: ${r.my_note}` : ""}`).join("\n") : "No prospects match that.";
+        } catch (e) { console.error("[earl] find_prospects:", e.message); content = "The prospect list could not be read: " + e.message; }
+      }
+      else if (block.name === "search_research") {
+        try {
+          const rows = await searchResearch(block.input.query);
+          content = rows.length ? rows.map(r => `[${r.doc} — ${r.heading}]\n${r.body}`).join("\n\n") : "Nothing in the research files covers that.";
+        } catch (e) { console.error("[earl] search_research:", e.message); content = "The research files could not be read: " + e.message; }
       }
       else if (block.name === "complete_goal") {
         try { await completeGoal(persist.userId, block.input.benchmark_id); content = "Goal marked complete."; }

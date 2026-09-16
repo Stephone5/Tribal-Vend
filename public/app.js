@@ -2,6 +2,7 @@ import { packageOf } from "./data.js";
 import { renderCloset, closetTabHidden, refreshCloset } from "./closet.js";
 import { renderCompany, refreshCompany, companyAfterRestock } from "./company.js";
 import { renderChat } from "./chat.js";
+import { renderLeads, refreshLeads } from "./leads.js";
 import { apiFetch, setPass } from "./api.js";
 import { el, esc, icon, sheet, confirmDialog, snackbar, pullToRefresh, segmented, expander, skel, haptic, setBackFallback, setAppbarSub, setTabSub, getTabSub } from "./ui.js";
 
@@ -14,6 +15,7 @@ const TABS = {
   company: { title: "Business", render: () => renderCompany($("#company")), refresh: () => refreshCompany($("#company")) },
   runs:    { title: "Restock",  render: () => renderRuns(),                 refresh: () => renderRuns(true) },
   closet:  { title: "Inventory",render: () => renderCloset($("#closet")),   refresh: () => refreshCloset() },
+  leads:   { title: "Leads",    render: () => renderLeads($("#leads")),     refresh: () => refreshLeads() },
   chat:    { title: "Earl",     render: () => renderChat($("#chat")),       refresh: null },
 };
 let current = "company";

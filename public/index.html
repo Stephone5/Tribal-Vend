@@ -323,7 +323,7 @@ nav.navbar button{
   display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px; padding:12px 0 16px;
   font-size:12px; line-height:16px; font-weight:500; letter-spacing:.031em
 }
-nav.navbar .ind{position:relative; width:64px; height:32px; border-radius:var(--r-full); display:flex; align-items:center; justify-content:center; transition:background-color .2s var(--ease)}
+nav.navbar .ind{position:relative; width:56px; height:32px; border-radius:var(--r-full); display:flex; align-items:center; justify-content:center; transition:background-color .2s var(--ease)}
 nav.navbar button:active .ind{background:color-mix(in srgb, var(--on-surface) 12%, transparent)}
 nav.navbar button.on{color:var(--on-surface); font-weight:700}
 nav.navbar button.on .ind{background:var(--secondary-container); color:var(--on-secondary-container)}
@@ -469,6 +469,7 @@ body.kbd #snack{bottom:12px}
   <section id="company"></section>
   <section id="runs" hidden></section>
   <section id="closet" hidden></section>
+  <section id="leads" hidden></section>
   <section id="chat" hidden></section>
 </main>
 
@@ -482,6 +483,9 @@ body.kbd #snack{bottom:12px}
     </button>
     <button data-tab="closet">
       <span class="ind"><svg class="ic" viewBox="0 0 24 24"><path d="M3 8l9-5 9 5v8l-9 5-9-5z"/><path d="M3 8l9 5 9-5M12 13v8"/></svg></span>Inventory
+    </button>
+    <button data-tab="leads">
+      <span class="ind"><svg class="ic" viewBox="0 0 24 24"><path d="M12 21s7-5.686 7-11a7 7 0 1 0-14 0c0 5.314 7 11 7 11z"/><circle cx="12" cy="10" r="2.5"/></svg></span>Leads
     </button>
     <button data-tab="chat">
       <span class="ind"><svg class="ic" viewBox="0 0 24 24"><path d="M20 15a2 2 0 0 1-2 2H8l-4 4V6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2z"/></svg></span>Earl
