@@ -98,7 +98,6 @@ function paint(root, d, stale) {
   root.innerHTML = "";
   healthBanners(root, d);
   root.appendChild(restockHero(d));
-  if (d.sales && d.sales.weeks && d.sales.weeks.length) root.appendChild(weeklyCard(d));
 
   root.appendChild(el(`<h2 class="sec-h">The money</h2>`));
   const pl = d.pl || [];
@@ -171,42 +170,33 @@ function restockSheet(R) {
         return `<b>${money2(p.c)}</b><span class="k"><i style="background:var(--primary)"></i>${esc(hourLabel(m.restockedAt, hrs))} · ${hrs < 48 ? Math.round(hrs * 10) / 10 + " hr" : (hrs / 24).toFixed(1) + " days"} in</span>${p.a != null ? `<span class="k"><i style="background:var(--on-surface-variant)"></i>avg ${money2(p.a)}</span>` : ""}`; },
     });
     body.appendChild(c);
-    if (m.prior.length) {
-      const pc = el(`<div class="card"><div class="ct">Earlier restocks</div><div class="cs">Sales in the same amount of time after each one</div><div class="rows"></div></div>`);
-      const rows = pc.querySelector(".rows");
-      rows.appendChild(el(`<div class="row"><div class="nm"><b>This restock</b><div class="mt">${esc(when(m.restockedAt))}</div></div><div class="val">${money2(m.revenue)}</div></div>`));
-      m.prior.forEach(p => rows.appendChild(el(`<div class="row"><div class="nm">${esc(when(p.at))}<div class="mt">${p.units} sold · ${money2(p.profit)} profit</div></div><div class="val">${money2(p.revenue)}</div></div>`)));
-      rows.appendChild(el(`<div class="row"><div class="nm">Average of those</div><div class="val">${money2(m.avg)}</div></div>`));
-      body.appendChild(pc);
+    const tc = el(`<div class="card"><div class="ct">Top sellers since the restock</div><div class="rows"></div></div>`);
+    topRows(tc.querySelector(".rows"), m.top);
+    body.appendChild(tc);
+    if (m.history.length > 1) {
+      const H = m.history, hl = H.map(p => new Date(p.at).toLocaleDateString([], { month: "numeric", day: "numeric" }));
+      const hc = el(`<div class="card"><div class="ct">Every restock</div><div class="cs">Touch a bar to read it, tap it for that restock's top sellers</div><div></div></div>`);
+      mountChart(hc.lastChild, pal => ({
+        ...axes(pal, hl),
+        series: [{ type: "bar", data: H.map((p, i) => ({ value: +p.revenue.toFixed(2), itemStyle: { color: i === H.length - 1 ? pal.tertiary : pal.primary, borderRadius: [4, 4, 0, 0] } })), barMaxWidth: 18 }],
+      }), {
+        height: 200, initial: H.length - 1,
+        readout: i => { const p = H[i]; if (!p) return ""; return `<b>${money2(p.revenue)} sales</b>${esc(when(p.at))}${i === H.length - 1 ? " (still going)" : ` · lasted ${p.days} days`} · ${money2(p.profit)} profit · ${p.units} sold`; },
+        onTap: i => { const p = H[i]; const b = el(`<div class="rows"></div>`); topRows(b, p.top);
+          sheet({ title: `Restock of ${hl[i]}`, sub: `${money2(p.revenue)} sales · ${money2(p.profit)} profit`, body: b }); },
+      });
+      body.appendChild(hc);
     }
   });
   sheet({
     title: "Since your last restock", sub: `${money2(R.revenue)} sales · ${money2(R.profit)} net profit`, body, full: true,
-    info: "Counts every sale since your latest restock in AirVend. The percentage compares that to the same number of hours after each of your previous 4 restocks, whatever day they happened. It starts over each time you send a restock. A machine that hasn't been restocked in 21 days is left out.",
+    info: "Counts every sale since your latest restock in AirVend. The percentage compares that to the same number of hours after each of your previous 4 restocks, whatever day they happened. It starts over each time you send a restock. The bars at the bottom are each whole restock, from that visit to the next one. A machine that hasn't been restocked in 21 days is left out.",
   });
 }
 
-// ---------- 2. weekly profit ----------
-function weeklyCard(d) {
-  const S = d.sales;
-  const weeks = S.weeks.slice(-14);
-  const lab = w => new Date(w.w + "T12:00:00").toLocaleDateString([], { month: "numeric", day: "numeric" });
-  const c = el(`<div class="card" data-live><div class="ct">Weekly profit</div><div class="cs">Touch a bar to read it, tap it for that week's top sellers</div><div></div></div>`);
-  mountChart(c.lastChild, pal => ({
-    ...axes(pal, weeks.map(lab)),
-    series: [{ type: "bar", data: weeks.map((w, i) => ({ value: +w.profit.toFixed(2), itemStyle: { color: i === weeks.length - 1 ? pal.tertiary : pal.primary, borderRadius: [4, 4, 0, 0] } })), barMaxWidth: 18 }],
-  }), {
-    height: 200, initial: weeks.length - 1,
-    readout: i => { const w = weeks[i]; if (!w) return ""; return `<b>${money2(w.profit)} profit</b>Week of ${lab(w)}${i === weeks.length - 1 ? " (still going)" : ""} · ${money2(w.revenue)} sales · ${w.units} sold`; },
-    onTap: i => weekSheet(weeks[i], (S.weekTop || {})[weeks[i].w] || [], lab(weeks[i])),
-  });
-  return c;
-}
-function weekSheet(w, top, label) {
-  const body = el(`<div class="rows"></div>`);
-  if (!top.length) body.appendChild(el(`<div class="empty">No sales that week.</div>`));
-  top.forEach((t, i) => body.appendChild(el(`<div class="row"><div class="nm">${i + 1}. ${esc(String(t.item).replace(/^(Meals|Drinks|Crackers)s*[-:]s*/i, ""))}<div class="mt">${t.units} sold · ${money2(t.profit)} profit</div></div><div class="val">${money2(t.revenue)}</div></div>`)));
-  sheet({ title: `Week of ${label}`, sub: `${money2(w.revenue)} sales · ${money2(w.profit)} profit`, body });
+function topRows(root, top) {
+  if (!top.length) root.appendChild(el(`<div class="empty">No sales yet.</div>`));
+  top.forEach((t, i) => root.appendChild(el(`<div class="row"><div class="nm">${i + 1}. ${esc(String(t.item).replace(/^(Meals|Drinks|Crackers)\s*[-:]\s*/i, ""))}<div class="mt">${t.units} sold · ${money2(t.profit)} profit</div></div><div class="val">${money2(t.revenue)}</div></div>`)));
 }
 
 // ---------- 3. profit & loss ----------

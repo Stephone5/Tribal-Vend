@@ -136,19 +136,6 @@ function monthlyByCategory(txns) {
     .map(([m, cats]) => ({ m, ...cats }));
 }
 
-// Top 5 items for each of the last 14 selling weeks, for tapping a bar in the weekly chart.
-function weekTopItems(txns) {
-  const out = {};
-  for (const t of txns) {
-    const w = startOfWeek(t.when).toISOString().slice(0, 10);
-    const c = costFor(t.item);
-    const it = ((out[w] ||= {})[t.item] ||= { item: t.item, revenue: 0, profit: 0, units: 0 });
-    it.revenue += t.amount; it.units += 1; if (c != null) it.profit += t.amount - c;
-  }
-  const keys = Object.keys(out).sort().slice(-14);
-  return Object.fromEntries(keys.map(k => [k, Object.values(out[k]).sort((a, b) => b.revenue - a.revenue).slice(0, 5)]));
-}
-
 // Restock times from AirVend's Refill History. Re-read every 10 minutes, and
 // right away after the app sends a restock.
 let restockCache = { at: 0, data: null };
@@ -186,7 +173,6 @@ async function getSales(force = false) {
   const sum = summarize(all, costFor);
   sum.salesTax = salesTaxReport(all, 2026);
   sum.monthlyByCategory = monthlyByCategory(all);
-  sum.weekTop = weekTopItems(all);
   salesCache = { at: Date.now(), sum, txns: all };
   return sum;
 }
@@ -312,7 +298,7 @@ async function buildLive(force = false) {
       thisWeek: sales.thisWeek, lastWeek: sales.lastWeek,
       thisMonth: sales.thisMonth, lastMonth: sales.lastMonth,
       weekStart: sales.weekStart, weeks: sales.weeks, days: sales.days,
-      weekTop: sales.weekTop, byDow: sales.byDow, byHour: sales.byHour, byItem: sales.byItem.slice(0, 40),
+      byDow: sales.byDow, byHour: sales.byHour, byItem: sales.byItem.slice(0, 40),
       months: sales.months, monthlyByCategory: sales.monthlyByCategory, firstSale: sales.firstSale,
       txnCount: sales.txnCount, spanDays: Math.round(spanDays),
       freshAt: salesCache.at,

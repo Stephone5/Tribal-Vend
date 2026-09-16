@@ -65,6 +65,20 @@ export function sinceRestock(txns, restocks, machines, now, costOf) {
     const cur = sumWin(last, new Date(now));
     const prior = list.slice(1, 5).map(r => ({ at: r, ...sumWin(r, new Date(r.getTime() + elapsed)) }));
     const avg = prior.length ? prior.reduce((a, p) => a + p.r, 0) / prior.length : null;
+    // each restock's whole stretch, up to the next restock (or now), with its top 5
+    const topOf = (a, b) => {
+      const by = {};
+      for (const t of mine) if (t.when >= a && t.when < b) {
+        const c = costOf(t.item), it = (by[t.item] ||= { item: t.item, revenue: 0, profit: 0, units: 0 });
+        it.revenue += t.amount; it.units += 1; if (c != null) it.profit += t.amount - c;
+      }
+      return Object.values(by).sort((x, y) => y.revenue - x.revenue).slice(0, 5);
+    };
+    const history = list.slice(0, 12).map((at, i) => {
+      const end = i === 0 ? new Date(now) : list[i - 1];
+      const w = sumWin(at, end);
+      return { at: at.toISOString(), days: +((end - at) / 864e5).toFixed(1), revenue: w.r, profit: w.p, units: w.u, top: topOf(at, end) };
+    }).reverse();
     revenue += cur.r; profit += cur.p; units += cur.u;
     if (avg != null) base += avg;
     minPrior = Math.min(minPrior, prior.length);
@@ -84,7 +98,7 @@ export function sinceRestock(txns, restocks, machines, now, costOf) {
     perMachine.push({
       id: m.id, name: m.name, restockedAt: last.toISOString(),
       revenue: cur.r, profit: cur.p, units: cur.u, avg, curve,
-      prior: prior.map(p => ({ at: p.at.toISOString(), revenue: p.r, profit: p.p, units: p.u })),
+      top: topOf(last, new Date(now)), history,
     });
   }
   if (!perMachine.length) return null;
