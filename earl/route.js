@@ -13,6 +13,7 @@ import { commanderChat, getSoulVersion, compressSession, generateSessionDebrief,
 import * as setup from "./db-setup.js";
 import { QUESTIONS, STAGE_FRAMING, STAGE_COMPLETE, STAGE_BOUNDS, getQuestionByField } from "./intake-questions.js";
 import { buildMemoryContext, describeGap } from "./memory/context.js";
+import { buildPrefill } from "./prefill.js";
 
 const _inFlight = new Set();
 function runBackground(label, fn) {
@@ -121,7 +122,13 @@ async function actionContext(userId) {
   return ctx.trim();
 }
 
-export function mountEarl(app, { rateLimit, getBusinessData }) {
+export function mountEarl(app, { rateLimit, getBusinessData, getLive }) {
+  // Draft answers for setup questions the app can answer from real data.
+  const draftFor = async field => {
+    if (!getLive) return null;
+    try { const { live, closet } = await getLive(); return buildPrefill(live, closet)[field] || null; }
+    catch (e) { console.error("[earl] prefill:", e.message); return null; }
+  };
   const notReady = res => res.status(503).json({ error: "earl_db", message: "Earl's memory database isn't connected yet, so Earl can't talk. Add EARL_SUPABASE_URL and EARL_SUPABASE_SERVICE_KEY on the server and run migrations/earl.sql." });
 
   app.get("/api/earl/history", async (_req, res) => {
@@ -259,7 +266,7 @@ export function mountEarl(app, { rateLimit, getBusinessData }) {
       const q = nextQuestion(answered);
       const base = { stages: stageStatus(state), progress: { answered: answered.size, total: QUESTIONS.length } };
       if (!q) return res.json({ ...base, done: true });
-      res.json({ ...base, done: false, stage: q.stage, framing: q.n === STAGE_BOUNDS[q.stage].first ? STAGE_FRAMING[q.stage] : null, question: { n: q.n, field: q.field, text: q.question } });
+      res.json({ ...base, done: false, stage: q.stage, framing: q.n === STAGE_BOUNDS[q.stage].first ? STAGE_FRAMING[q.stage] : null, question: { n: q.n, field: q.field, text: q.question, draft: await draftFor(q.field) } });
     } catch (e) { res.status(502).json({ error: "interview_failed", message: e.message }); }
   });
 
@@ -286,7 +293,7 @@ export function mountEarl(app, { rateLimit, getBusinessData }) {
       const state = await setup.getMemberState(MEMBER_ID);
       const out = { stageComplete: stageResult.completed ? stageResult.message : null, goalsReady: !!stageResult.goalsReady, stages: stageStatus(state), progress: { answered: answered.size, total: QUESTIONS.length } };
       if (!nq) return res.json({ ...out, done: true });
-      res.json({ ...out, done: false, stage: nq.stage, framing: nq.n === STAGE_BOUNDS[nq.stage].first && stageResult.completed ? STAGE_FRAMING[nq.stage] : null, question: { n: nq.n, field: nq.field, text: nq.question } });
+      res.json({ ...out, done: false, stage: nq.stage, framing: nq.n === STAGE_BOUNDS[nq.stage].first && stageResult.completed ? STAGE_FRAMING[nq.stage] : null, question: { n: nq.n, field: nq.field, text: nq.question, draft: await draftFor(nq.field) } });
     } catch (e) { console.error("[earl] interview answer:", e.message); res.status(502).json({ error: "interview_failed", message: `Couldn't save your answer: ${e.message}` }); }
   });
 

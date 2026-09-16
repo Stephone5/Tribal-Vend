@@ -229,8 +229,13 @@ async function openInterview() {
     if (st.framing) body.appendChild(el(`<div class="card" style="white-space:pre-wrap">${escHtml(st.framing)}</div>`));
     body.appendChild(el(`<div class="ch-b ch-ai" style="max-width:100%;margin:12px 0">${escHtml(isFollow ? st.followUp : q.text)}</div>`));
     const ta = el(`<textarea rows="5" aria-label="Your answer" style="width:100%;box-sizing:border-box;border:0;border-radius:16px;background:var(--surface-c-high);color:var(--on-surface);padding:12px 16px;font-size:16px;line-height:24px;resize:vertical"></textarea>`);
+    if (!isFollow && q.draft) {
+      body.appendChild(el(`<p class="money-s" style="margin:0 4px 6px">Filled in from your app numbers. Change it or add to it before you send it.</p>`));
+      ta.value = q.draft;
+    }
     const go = el(`<button class="btn filled" style="margin-top:12px" disabled>Next</button>`);
     ta.oninput = () => { go.disabled = !ta.value.trim(); };
+    go.disabled = !ta.value.trim();
     go.onclick = async () => {
       const answer = ta.value.trim(); if (!answer) return;
       wait();

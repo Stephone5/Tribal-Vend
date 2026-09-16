@@ -401,8 +401,16 @@ app.put("/api/costs", async (req, res) => {
 // ---- Earl (the Ask tab): the Bridge's mentor, copied into this app ----
 // His own Supabase database holds conversation and memory; the live numbers
 // below are handed to him on every message.
+async function earlLiveData() {
+  const [live, closet] = await Promise.all([
+    (liveCache.data && Date.now() - liveCache.at < INV_TTL) ? liveCache.data : buildLive().then(d => { liveCache = { at: Date.now(), data: d }; return d; }),
+    getDoc(CLOSET_KEY).catch(() => null),
+  ]);
+  return { live, closet };
+}
 mountEarl(app, {
   rateLimit,
+  getLive: earlLiveData,
   getBusinessData: async () => {
     const [live, closet] = await Promise.all([
       (liveCache.data && Date.now() - liveCache.at < INV_TTL) ? liveCache.data : buildLive().then(d => { liveCache = { at: Date.now(), data: d }; return d; }),
