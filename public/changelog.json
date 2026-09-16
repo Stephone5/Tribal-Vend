@@ -1,4 +1,5 @@
 [
+  { "version": "66", "date": "2026-09-15", "title": "QuickBooks off the books", "notes": ["QuickBooks counts only through July 2026, its last charge. This app replaced it.", "Money out each month is now $40.39 in bills plus the $197.26 loan payment."] },
   { "version": "65", "date": "2026-09-15", "title": "Setup questions come pre-filled", "notes": ["Questions the app can answer from your real numbers arrive already written out.", "Change them or add context before sending; questions it can't answer stay blank."] },
   { "version": "64", "date": "2026-09-15", "title": "July and August bank numbers", "notes": ["Cash in the bank is current through August 31: $838.96.", "Earl and the balance sheet now use it instead of estimating from June."] },
   { "version": "63", "date": "2026-09-15", "title": "Earl setup and goals", "notes": ["Earl's setup questions, the same 31 as the Bridge, under Setup on the Earl tab.", "Earl drafts your goals after Stage 2; keep, edit, finish or remove them.", "Add your own goals and action steps by hand.", "Removed the line under the Earl title and the top reload button; pull down to refresh."] },

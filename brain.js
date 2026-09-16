@@ -148,7 +148,11 @@ export function askContext(live, closet) {
     lines.push(`month | ${cats.join(" | ")}`);
     S.monthlyByCategory.forEach(r => lines.push(`${r.m} | ${cats.map(c => r[c] || 0).join(" | ")}`));
   }
-  if (live?.fixedCosts) lines.push(`\nMONTHLY BILLS (already subtracted in each month's net): ${live.fixedCosts.map(c => `${c.name}${c.note ? ` (${c.note})` : ""} $${c.amount.toFixed(2)}`).join("; ")}`);
+  if (live?.fixedCosts) {
+    const ended = (live.allFixedCosts || []).filter(c => c.endedAfter);
+    lines.push(`\nMONTHLY BILLS STILL BEING PAID (already subtracted in each month's net): ${live.fixedCosts.map(c => `${c.name}${c.note ? ` (${c.note})` : ""} $${c.amount.toFixed(2)}`).join("; ")}`
+      + (ended.length ? `. Cancelled, no longer paid: ${ended.map(c => `${c.name}${c.note ? ` (${c.note})` : ""} $${c.amount.toFixed(2)}/mo through ${c.endedAfter}`).join("; ")}` : ""));
+  }
   const L = live?.loan;
   if (L) {
     lines.push(`\nWENDLE LOAN (from Stephen's Google Sheet${L.sheetError ? `; NOTE: couldn't read the sheet (${L.sheetError}), using ${L.stale ? "the last copy read" : "the built-in schedule"}` : ""}):`);
