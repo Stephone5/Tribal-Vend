@@ -341,7 +341,9 @@ export function mountEarl(app, { rateLimit, getBusinessData, getLive }) {
     if (!earlDbReady()) return notReady(res);
     try {
       const q = req.query;
-      const rows = await findProspects({
+      // The lists load themselves the first time this screen is opened, so a
+      // deploy that happened before the tables existed still fills in.
+      let rows = await findProspects({
         anchor: q.anchor || undefined,
         category: q.category || undefined,
         maxMiles: q.maxMiles ? Number(q.maxMiles) : undefined,
@@ -350,6 +352,16 @@ export function mountEarl(app, { rateLimit, getBusinessData, getLive }) {
         search: q.search || undefined,
         limit: Number(q.limit) || 60,
       });
+      if (!rows.length) {
+        const seeded = await seedLeads();
+        if (seeded && seeded.prospects) rows = await findProspects({
+          anchor: q.anchor || undefined, category: q.category || undefined,
+          maxMiles: q.maxMiles ? Number(q.maxMiles) : undefined,
+          status: q.status ? String(q.status).split(",") : undefined,
+          hasPhone: q.hasPhone === "1", search: q.search || undefined,
+          limit: Number(q.limit) || 60,
+        });
+      }
       res.json({ rows, counts: await countsByAnchor() });
     } catch (e) { res.status(502).json({ error: "leads_failed", message: e.message }); }
   });
