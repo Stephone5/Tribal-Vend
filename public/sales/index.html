@@ -1,0 +1,273 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Tribal Vend · Free vending machines for OKC businesses</title>
+<meta name="description" content="A free, fully stocked vending machine for your OKC business. Card readers on every machine, restocked the same day every week, and a real person who answers.">
+<meta name="theme-color" content="#0d0e10">
+<style>
+  :root{
+    --ink:#0d0e10; --ink-2:#16181c; --ink-3:#1f2228;
+    --paper:#f3efe6; --paper-dim:#b9b5ad;
+    --blue:#1f8fff; --blue-deep:#0a5fd1;
+    --yellow:#ffc629; --yellow-deep:#e6a800;
+    --r:22px;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0; background:var(--ink); color:var(--paper); font-family:"Inter","Segoe UI",system-ui,-apple-system,Roboto,Helvetica,Arial,sans-serif; -webkit-font-smoothing:antialiased; line-height:1.5; overflow-x:hidden}
+  a{color:inherit}
+  .wrap{max-width:1180px; margin:0 auto; padding:0 20px}
+  h1,h2,h3{font-weight:800; letter-spacing:-.035em; line-height:.98; margin:0}
+  .eyebrow{font-size:13px; font-weight:700; letter-spacing:.14em; text-transform:uppercase; color:var(--yellow)}
+
+  /* top bar */
+  .top{position:sticky; top:0; z-index:20; backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px); background:rgba(13,14,16,.72); border-bottom:1px solid rgba(243,239,230,.06)}
+  .top .wrap{display:flex; align-items:center; justify-content:space-between; height:64px}
+  .brand{font-weight:800; font-size:19px; letter-spacing:-.02em}
+  .brand b{color:var(--blue)}
+  .top .tel{font-weight:600; font-size:15px; text-decoration:none; color:var(--paper-dim)}
+  .top .tel:hover{color:var(--yellow)}
+
+  /* buttons */
+  .cta{display:inline-flex; align-items:center; gap:12px; background:var(--yellow); color:var(--ink); font-weight:800; font-size:18px; text-decoration:none; padding:18px 26px; border-radius:999px; transition:transform .2s ease, box-shadow .2s ease, background .2s; box-shadow:0 10px 30px -10px rgba(255,198,41,.55)}
+  .cta:hover{transform:translateY(-2px); background:#ffd257; box-shadow:0 16px 40px -12px rgba(255,198,41,.7)}
+  .cta svg{width:20px; height:20px; transition:transform .2s}
+  .cta:hover svg{transform:translateX(3px)}
+  .phone{display:inline-flex; align-items:center; gap:10px; font-weight:700; font-size:18px; text-decoration:none; padding:18px 6px}
+  .phone span{border-bottom:2px solid var(--blue)}
+  .actions{display:flex; flex-wrap:wrap; align-items:center; gap:10px 22px; margin-top:36px}
+
+  /* hero */
+  .hero{position:relative; padding:72px 0 90px; overflow:hidden}
+  .hero::before{content:""; position:absolute; width:900px; height:900px; right:-320px; top:-360px; background:radial-gradient(circle, rgba(31,143,255,.35), transparent 62%); pointer-events:none}
+  .hero::after{content:""; position:absolute; width:600px; height:600px; left:-260px; bottom:-380px; background:radial-gradient(circle, rgba(255,198,41,.16), transparent 65%); pointer-events:none}
+  .hero h1{font-size:clamp(46px, 9.4vw, 128px); max-width:11ch; margin-top:18px; position:relative}
+  .hero h1 em{font-style:normal; color:var(--blue)}
+  .hero h1 .u{background:linear-gradient(transparent 72%, rgba(255,198,41,.9) 72%, rgba(255,198,41,.9) 90%, transparent 90%)}
+  .hero p.lead{font-size:clamp(19px, 2.2vw, 24px); color:var(--paper-dim); max-width:36ch; margin:28px 0 0; position:relative}
+  .hero p.lead b{color:var(--paper); font-weight:600}
+
+  /* ticker */
+  .ticker{background:var(--blue); color:var(--ink); overflow:hidden; white-space:nowrap; transform:rotate(-1.2deg) scale(1.04); padding:16px 0; font-weight:800; font-size:clamp(20px, 3vw, 30px); letter-spacing:-.02em}
+  .ticker .run{display:inline-block; animation:run 28s linear infinite}
+  .ticker i{font-style:normal; color:var(--yellow); margin:0 22px; -webkit-text-stroke:1px var(--ink)}
+  @keyframes run{to{transform:translateX(-50%)}}
+
+  section{padding:120px 0}
+  .sh{font-size:clamp(38px, 6vw, 76px); max-width:16ch}
+  .sub{font-size:20px; color:var(--paper-dim); max-width:52ch; margin-top:22px}
+
+  /* problem: bento */
+  .bento{display:grid; grid-template-columns:repeat(6, 1fr); gap:14px; margin-top:56px}
+  .tile{background:var(--ink-2); border:1px solid rgba(243,239,230,.07); border-radius:var(--r); padding:30px; min-height:220px; display:flex; flex-direction:column; justify-content:space-between}
+  .tile .n{font-size:14px; font-weight:700; color:var(--paper-dim)}
+  .tile h3{font-size:clamp(24px, 2.6vw, 32px); margin-top:40px}
+  .tile p{color:var(--paper-dim); margin:12px 0 0; font-size:17px}
+  .t1{grid-column:span 4} .t2{grid-column:span 2} .t3{grid-column:span 3} .t4{grid-column:span 3}
+  .t2{background:var(--yellow); color:var(--ink); border:0} .t2 .n,.t2 p{color:rgba(13,14,16,.72)}
+
+  /* guide */
+  .guide{background:var(--paper); color:var(--ink); border-radius:36px; margin:0 12px}
+  .guide .eyebrow{color:var(--blue-deep)}
+  .guide-grid{display:grid; grid-template-columns:minmax(0,1.05fr) minmax(0,1fr); gap:64px; align-items:center}
+  .photo{position:relative}
+  .photo img{width:100%; display:block; border-radius:28px; aspect-ratio:4/4.3; object-fit:cover; object-position:62% 30%}
+  .photo .tag{position:absolute; left:-10px; bottom:28px; background:var(--ink); color:var(--paper); border-radius:18px; padding:14px 18px; font-weight:700; font-size:15px; line-height:1.3; box-shadow:0 18px 40px -16px rgba(0,0,0,.5)}
+  .photo .tag small{display:block; color:var(--yellow); font-weight:600; font-size:13px}
+  .guide .sub{color:#4b4a46}
+  .facts{list-style:none; padding:0; margin:34px 0 0; display:grid; gap:10px}
+  .facts li{display:flex; gap:14px; align-items:flex-start; font-size:18px; font-weight:500; padding:14px 0; border-top:1px solid rgba(13,14,16,.1)}
+  .facts svg{flex:none; width:24px; height:24px; color:var(--blue-deep); margin-top:2px}
+
+  /* plan */
+  .steps{display:grid; grid-template-columns:repeat(3, 1fr); gap:14px; margin-top:56px; counter-reset:s}
+  .step{position:relative; padding:34px 30px 36px; border-radius:var(--r); background:linear-gradient(160deg, var(--ink-3), var(--ink-2)); border:1px solid rgba(243,239,230,.07); overflow:hidden}
+  .step::before{counter-increment:s; content:counter(s); position:absolute; right:18px; top:-18px; font-size:150px; font-weight:900; letter-spacing:-.06em; color:rgba(31,143,255,.16)}
+  .step h3{font-size:28px; margin-top:70px; position:relative}
+  .step p{color:var(--paper-dim); font-size:17px; margin:12px 0 0; position:relative}
+
+  /* stakes */
+  .split{display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-top:56px}
+  .side{border-radius:var(--r); padding:36px}
+  .side h3{font-size:30px}
+  .side ul{margin:22px 0 0; padding:0; list-style:none; display:grid; gap:14px; font-size:18px}
+  .side li{padding-left:28px; position:relative}
+  .side li::before{content:""; position:absolute; left:0; top:10px; width:12px; height:12px; border-radius:50%}
+  .without{background:var(--ink-2); border:1px solid rgba(243,239,230,.07); color:var(--paper-dim)}
+  .without h3{color:var(--paper)} .without li::before{background:#5a5d64}
+  .with{background:var(--blue); color:#fff}
+  .with li::before{background:var(--yellow)}
+
+  /* final */
+  .final{text-align:center; padding:140px 0 120px; position:relative; overflow:hidden}
+  .final::before{content:""; position:absolute; inset:auto 50% -500px auto; transform:translateX(50%); width:1100px; height:900px; background:radial-gradient(circle, rgba(31,143,255,.3), transparent 60%); pointer-events:none}
+  .final h2{font-size:clamp(46px, 9vw, 120px); max-width:12ch; margin:18px auto 0; position:relative}
+  .final h2 em{font-style:normal; color:var(--yellow)}
+  .final .actions{justify-content:center; position:relative}
+  .final .sub{margin-left:auto; margin-right:auto; position:relative}
+
+  footer{border-top:1px solid rgba(243,239,230,.07); padding:34px 0 calc(34px + env(safe-area-inset-bottom)); color:var(--paper-dim); font-size:14px}
+  footer .wrap{display:flex; justify-content:space-between; flex-wrap:wrap; gap:10px}
+
+  /* reveal on scroll */
+  .rv{opacity:0; transform:translateY(28px); transition:opacity .8s cubic-bezier(.2,.7,.2,1), transform .8s cubic-bezier(.2,.7,.2,1)}
+  .rv.in{opacity:1; transform:none}
+  @media (prefers-reduced-motion:reduce){ .rv{opacity:1; transform:none; transition:none} .ticker .run{animation:none} html{scroll-behavior:auto} }
+
+  @media (max-width:860px){
+    section{padding:84px 0}
+    .hero{padding:48px 0 70px}
+    .bento{grid-template-columns:1fr} .t1,.t2,.t3,.t4{grid-column:auto}
+    .tile{min-height:0} .tile h3{margin-top:26px}
+    .guide{margin:0 8px; border-radius:28px}
+    .guide-grid{grid-template-columns:minmax(0,1fr); gap:40px}
+    .photo .tag{left:12px}
+    .steps,.split{grid-template-columns:1fr}
+    .top .tel{font-size:14px}
+    .cta{width:100%; justify-content:center}
+    .actions{gap:4px 22px}
+  }
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="arrow" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" d="M4 12h15M13 6l6 6-6 6"/></symbol>
+  <symbol id="call" viewBox="0 0 24 24"><path fill="currentColor" d="M6.6 10.8a15.1 15.1 0 0 0 6.6 6.6l2.2-2.2c.3-.3.7-.4 1-.2 1.1.4 2.3.6 3.6.6.6 0 1 .4 1 1V20c0 .6-.4 1-1 1A17 17 0 0 1 3 4c0-.6.4-1 1-1h3.5c.6 0 1 .4 1 1 0 1.3.2 2.5.6 3.6.1.3 0 .7-.2 1z"/></symbol>
+  <symbol id="check" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" d="M4 12.5l5 5L20 6.5"/></symbol>
+</svg>
+
+<header class="top">
+  <div class="wrap">
+    <div class="brand">Tribal <b>Vend</b></div>
+    <a class="tel" href="tel:+14058769250">405-876-9250</a>
+  </div>
+</header>
+
+<main>
+  <div class="hero">
+    <div class="wrap">
+      <div class="eyebrow">For Oklahoma City businesses</div>
+      <h1 >Your people get fed. <em>You</em> get <span class="u">nothing</span> to manage.</h1>
+      <p class="lead">I put a stocked vending machine in your business <b>for free</b>, keep it full every week, and handle every part of it so you can stay focused on your own work.</p>
+      <div class="actions">
+        <a class="cta" href="mailto:stephen@tribalvend.com?subject=Inquiry%20for%20a%20vending%20machine%20at%20my%20business">Get a free machine <svg><use href="#arrow"/></svg></a>
+        <a class="phone" href="tel:+14058769250"><svg width="20" height="20" style="color:var(--blue)"><use href="#call"/></svg><span>405-876-9250</span></a>
+      </div>
+    </div>
+  </div>
+
+  <div class="ticker" aria-hidden="true"><div class="run">
+    Free to your business <i>●</i> Card readers on every machine <i>●</i> Restocked the same day every week <i>●</i> A real person who answers <i>●</i>
+    Free to your business <i>●</i> Card readers on every machine <i>●</i> Restocked the same day every week <i>●</i> A real person who answers <i>●</i>
+  </div></div>
+
+  <section>
+    <div class="wrap">
+      <div class="eyebrow rv">The problem</div>
+      <h2 class="sh rv">You want to take care of people. You don't want another job.</h2>
+      <div class="bento">
+        <div class="tile t1 rv"><div class="n">01</div><div><h3>Your staff leave to get a drink.</h3><p>Every trip to the gas station down the road eats into a break or a shift.</p></div></div>
+        <div class="tile t2 rv"><div class="n">02</div><div><h3>Running a break room is its own job.</h3><p>Buying, stocking, fixing and counting money takes hours you don't have.</p></div></div>
+        <div class="tile t3 rv"><div class="n">03</div><div><h3>Customers wait with nothing.</h3><p>A lobby with a cold drink in reach feels like a place that cares.</p></div></div>
+        <div class="tile t4 rv"><div class="n">04</div><div><h3>Some vendors disappear.</h3><p>The machine sits empty, the card reader breaks, and nobody calls you back.</p></div></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="guide">
+    <div class="wrap guide-grid">
+      <div class="photo rv">
+        <img src="stephen.jpg" alt="Stephen Barton, owner of Tribal Vend, standing next to two of his stocked vending machines" loading="lazy" width="1100" height="938">
+        <div class="tag">Stephen Barton<small>Owner, Tribal Vend</small></div>
+      </div>
+      <div>
+        <div class="eyebrow rv">Who you'd be working with</div>
+        <h2 class="sh rv">I'm Stephen, and I run a business too.</h2>
+        <p class="sub rv">I know your attention belongs on your customers and your crew. My job is to make the vending machine something you never have to think about.</p>
+        <ul class="facts">
+          <li class="rv"><svg><use href="#check"/></svg>Completely free to your business</li>
+          <li class="rv"><svg><use href="#check"/></svg>Card readers on every machine</li>
+          <li class="rv"><svg><use href="#check"/></svg>Restocked on the same day every week, at a time we pick together</li>
+          <li class="rv"><svg><use href="#check"/></svg>The machine is picked to fit your location</li>
+          <li class="rv"><svg><use href="#check"/></svg>You reach me directly, and I get back to you</li>
+        </ul>
+        <div class="actions rv" style="margin-top:30px">
+          <a class="phone" href="tel:+14058769250" style="padding-left:0"><svg width="20" height="20" style="color:var(--blue-deep)"><use href="#call"/></svg><span>405-876-9250</span></a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap">
+      <div class="eyebrow rv">How it works</div>
+      <h2 class="sh rv">Three steps, and the last one is forgetting about it.</h2>
+      <div class="steps">
+        <div class="step rv"><h3>Send me an email</h3><p>Tell me about your business and where people gather.</p></div>
+        <div class="step rv"><h3>We set it up together</h3><p>We choose the spot, the machine and your weekly restock day.</p></div>
+        <div class="step rv"><h3>Your people are taken care of</h3><p>The machine shows up stocked, and I keep it that way every week.</p></div>
+      </div>
+      <div class="actions rv">
+        <a class="cta" href="mailto:stephen@tribalvend.com?subject=Inquiry%20for%20a%20vending%20machine%20at%20my%20business">Get a free machine <svg><use href="#arrow"/></svg></a>
+      </div>
+    </div>
+  </section>
+
+  <section style="padding-top:0">
+    <div class="wrap">
+      <div class="split">
+        <div class="side without rv">
+          <h3>Without a machine</h3>
+          <ul>
+            <li>Staff leave the building for snacks and drinks</li>
+            <li>Customers wait with nothing to grab</li>
+            <li>You end up hauling cases from the store yourself</li>
+          </ul>
+        </div>
+        <div class="side with rv">
+          <h3>With Tribal Vend</h3>
+          <ul>
+            <li>Food and drinks a few steps away, paid by card</li>
+            <li>A full machine every single week</li>
+            <li>Months go by without you thinking about it</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="final">
+    <div class="wrap">
+      <div class="eyebrow rv">Free for OKC businesses</div>
+      <h2 class="rv">Let's take this <em>off your plate.</em></h2>
+      <p class="sub rv">One email starts it. I'll reply personally and we'll find a time that works for you.</p>
+      <div class="actions rv">
+        <a class="cta" href="mailto:stephen@tribalvend.com?subject=Inquiry%20for%20a%20vending%20machine%20at%20my%20business">Get a free machine <svg><use href="#arrow"/></svg></a>
+        <a class="phone" href="tel:+14058769250"><svg width="20" height="20" style="color:var(--blue)"><use href="#call"/></svg><span>405-876-9250</span></a>
+      </div>
+    </div>
+  </div>
+</main>
+
+<footer>
+  <div class="wrap">
+    <div>© Tribal Vend · Oklahoma City</div>
+    <div>stephen@tribalvend.com · 405-876-9250</div>
+  </div>
+</footer>
+
+<script>
+  (function () {
+    var els = document.querySelectorAll(".rv");
+    if (!("IntersectionObserver" in window)) { els.forEach(function (e) { e.classList.add("in"); }); return; }
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (en) { if (en.isIntersecting) { en.target.classList.add("in"); io.unobserve(en.target); } });
+    }, { rootMargin: "0px 0px -8% 0px", threshold: 0.08 });
+    els.forEach(function (e, i) { e.style.transitionDelay = (i % 4) * 60 + "ms"; io.observe(e); });
+  })();
+</script>
+</body>
+</html>

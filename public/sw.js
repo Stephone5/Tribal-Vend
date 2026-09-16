@@ -8,7 +8,7 @@
 // A background update keeps the cached shell fresh: every load we quietly
 // re-fetch the shell and store the new copy for next time.
 
-const CACHE = "tv-v69";
+const CACHE = "tv-v70";
 const SHELL = [
   "./", "./index.html", "./app.js", "./data.js", "./closet.js",
   "./company.js", "./leads.js", "./charts.js", "./echarts.min.js", "./chat.js", "./api.js", "./ui.js", "./manifest.webmanifest",
@@ -41,6 +41,9 @@ self.addEventListener("fetch", e => {
 
   // API calls always go to the network — never serve stale business data.
   if (url.pathname.startsWith("/api/")) return;
+
+  // The public sales page lives outside the app and is never cached into it.
+  if (url.pathname.startsWith("/sales")) return;
 
   // Shell: cache-first, refresh in the background.
   e.respondWith(
