@@ -157,11 +157,19 @@ export const INVENTORY_PURCHASES = [
 export const INVENTORY_ON_HAND_MAY26 = 738.42;
 export const PURCHASE_DATA_THROUGH = "2026-05";
 
+// Recurring bills. `endedAfter` is the last month a bill was actually paid —
+// it still counts in that month and every month before it, and stops after.
+// QuickBooks was cancelled: the last Intuit charge on the FNB statement is
+// July 13, 2026 ($177.02), and August has none. This app replaced it.
 export const FIXED_COSTS = [
-  { name: "Software & apps", amount: 177.02, note: "QuickBooks" },
+  { name: "Software & apps", amount: 177.02, note: "QuickBooks, cancelled after July 2026", endedAfter: "Jul 26" },
   { name: "Business insurance", amount: 31.49, note: "NEXT" },
   { name: "Google Workspace", amount: 8.90 },
 ];
+
+// The bills that are still being paid — what "money out each month" means now.
+export const activeFixedCosts = (label = null) =>
+  FIXED_COSTS.filter(c => !c.endedAfter || (label ? monthKey(label) <= monthKey(c.endedAfter) : false));
 
 // Fallback product-cost ratio (revenue → COGS), used only for months that
 // predate the live transaction feed. Real months use per-item costs instead.
@@ -180,7 +188,6 @@ const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct
 const monthKey = label => { const [mo, yy] = label.split(" "); return (2000 + parseInt(yy, 10)) * 12 + MON.indexOf(mo); };
 
 export function buildPL(salesMonths) {
-  const opFixed = FIXED_COSTS.reduce((a, c) => a + c.amount, 0);
   const bankBy = {};
   MONTHLY.forEach(m => { bankBy[m.m] = m; });
   const txnBy = {};
@@ -213,6 +220,8 @@ export function buildPL(salesMonths) {
     // Loan INTEREST for this month is an expense; principal is not.
     const [monStr, yy] = lbl.split(" ");
     const loanInterest = interestForMonth(2000 + parseInt(yy, 10), MON.indexOf(monStr) + 1);
+    // Only the bills being paid in THIS month (a cancelled bill stops counting).
+    const opFixed = activeFixedCosts(lbl).reduce((acc, c) => acc + c.amount, 0);
     const fixed = opFixed + loanInterest;
     return {
       m: lbl, revenue, cogs, gross, fixed, opFixed, loanInterest,

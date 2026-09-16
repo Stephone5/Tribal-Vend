@@ -10,7 +10,7 @@ import { runBrain, askContext } from "./brain.js";
 import { mountEarl } from "./earl/route.js";
 import { startMemoryWorker } from "./earl/memory/worker.js";
 import { writeOnHand, getMachineLive } from "./airvend.js";
-import { costFor, costInfo, setCostOverrides, categoryFor, seasonCategoryFor, SOLD_BY_SLOT, SALES_WINDOW, MONTHLY, FIXED_COSTS, buildPL, INVENTORY_PURCHASES, INVENTORY_ON_HAND_MAY26, PURCHASE_DATA_THROUGH } from "./catalog.js";
+import { costFor, costInfo, setCostOverrides, categoryFor, seasonCategoryFor, SOLD_BY_SLOT, SALES_WINDOW, MONTHLY, FIXED_COSTS, activeFixedCosts, buildPL, INVENTORY_PURCHASES, INVENTORY_ON_HAND_MAY26, PURCHASE_DATA_THROUGH } from "./catalog.js";
 import { CLOSET_SEED } from "./closet-seed.js";
 import { auditData } from "./audit.js";
 import { LOAN, loanStatus } from "./loan.js";
@@ -97,7 +97,7 @@ const KNOWN_MACHINES = new Set(["69157", "69180"]);
 
 // Financial data — behind the passcode (never in the public app code).
 app.get("/api/finance", (_req, res) => {
-  res.json({ monthly: MONTHLY, fixedCosts: FIXED_COSTS, slots: SLOTS, loan: loanStatus(), loanSchedule: LOAN, windowLabel: WINDOW_LABEL });
+  res.json({ monthly: MONTHLY, fixedCosts: activeFixedCosts(), slots: SLOTS, loan: loanStatus(), loanSchedule: LOAN, windowLabel: WINDOW_LABEL });
 });
 
 // ---- Live business data: real planogram + prices from AirVend, real costs,
@@ -316,7 +316,7 @@ async function buildLive(force = false) {
       txnCount: sales.txnCount, spanDays: Math.round(spanDays),
       freshAt: salesCache.at,
     } : null,
-    window: SALES_WINDOW, monthly: MONTHLY, fixedCosts: FIXED_COSTS,
+    window: SALES_WINDOW, monthly: MONTHLY, fixedCosts: activeFixedCosts(), allFixedCosts: FIXED_COSTS,
     pl: buildPL(sales?.months), loan, restock, balanceSheet, inventoryLoss, salesTax: sales?.salesTax || null, at: Date.now(),
   };
   try { payload.audit = auditData(payload, closet); }

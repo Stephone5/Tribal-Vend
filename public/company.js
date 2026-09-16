@@ -254,7 +254,9 @@ function plCard(pl, periodLabel, d) {
   const loanInt = sum("loanInterest"), opFixed = sum("opFixed");
   const expenses = opFixed + loanInt, net = gross - expenses;
   const span = N === 1 ? pl[0].m : `${pl[0].m} – ${pl[N - 1].m}`;
-  const opLines = (d.fixedCosts || []).map(c => ({ name: c.name, amt: c.amount * N }));
+  // A bill that ended counts only in the months it was paid.
+  const monthsOf = c => c.endedAfter ? pl.filter(p => parseMonth(p.m).year * 12 + parseMonth(p.m).month <= parseMonth(c.endedAfter).year * 12 + parseMonth(c.endedAfter).month).length : N;
+  const opLines = (d.allFixedCosts || d.fixedCosts || []).map(c => ({ name: c.name, amt: c.amount * monthsOf(c) })).filter(l => l.amt > 0);
   const c = el(`<div class="card"><div class="ct">Statement</div><div class="cs">${esc(periodLabel)} · ${esc(span)}</div></div>`);
   const t = el(`<div class="qb"></div>`);
   const grp = (label, val, bold) => el(`<div class="qb-h ${bold ? "b" : ""}"><span>${esc(label)}</span><span>${money2(val)}</span></div>`);

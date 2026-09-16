@@ -71,7 +71,8 @@ export function buildPrefill(live, closet) {
   if (billLines.length) {
     const buys = (live.inventoryLoss && live.inventoryLoss.bought && S?.months?.length)
       ? `Product from Sam's Club is the biggest spend overall: ${money(live.inventoryLoss.bought)} bought since the start.` : "";
-    out.major_expenses = `${billLines.join("; ")}, and the Wendle loan payment ${money2(payment)}/mo. ${buys}`.trim();
+    const ended = (live.allFixedCosts || []).filter(c => c.endedAfter).map(c => `${c.name}${c.note ? ` (${c.note})` : ""} ${money2(c.amount)}/mo, stopped after ${c.endedAfter}`);
+    out.major_expenses = `${billLines.join("; ")}, and the Wendle loan payment ${money2(payment)}/mo. ${buys}${ended.length ? ` Cancelled: ${ended.join("; ")} — this app replaced it.` : ""}`.trim();
   }
 
   if (lastBank && pl.length) {
