@@ -71,15 +71,15 @@ Phone numbers are from published listings. "—" means not verified; don't assum
 | 2 | 133 | **TB Fitness Club** | Gym / sports | 2.77 mi | 3,101 ft (11.1 min) | (405) 849-9173 · 3333 W Hefner Rd, OKC 73120 · Listed on the map as The Lighthouse; that name is stale. 40,000 SF, courts, golf sims, recovery. |
 | 3 | 131 | **Oklahoma City Police Department** | First responders | 2.01 mi | 6,035 ft (21.6 min) | (405) 297-1150 · Hefner Division, 3924 NW 122nd St, OKC 73120 · Officer count not published. Shift work around the clock. |
 | 4 | 129 | **Mercy Hospital Oklahoma City** | Hospital | 1.79 mi | 1,603 ft (5.7 min) | (405) 755-1515 · 4300 W Memorial Rd, OKC 73120 · Full acute-care hospital 1.8 mi out. Staff count not published; cafeteria on site, so aim at a shop or annex, not the main lobby. |
-| 5 | 129 | **Paycom** | Office | 1.88 mi | 3,481 ft (12.4 min) | (800) 580-4505 · 7501 W Memorial Rd, OKC 73142 · HQ campus, 5,770 employees company-wide as of Aug 2026, OKC is the main hub. Corporate campus with its own amenities â€” long shot, huge if it lands. |
+| 5 | 129 | **Paycom** | Office | 1.88 mi | 3,481 ft (12.4 min) | (800) 580-4505 · 7501 W Memorial Rd, OKC 73142 · HQ campus, 5,770 employees company-wide as of Aug 2026, OKC is the main hub. Corporate campus with its own amenities — long shot, huge if it lands. |
 | 6 | 124 | **Francis Tuttle Technology Center - Portland Campus** | College | 3.22 mi | 4,248 ft (15.2 min) | (405) 717-7799 · 3500 NW 150th St, OKC 73134 · Career-tech campus, adult and high-school students. |
 | 7 | 123 | **Speedee Oil Change** | Auto / trade shop | 2.85 mi | 1,527 ft (5.5 min) | 8613 N Council Rd, OKC 73132 |
-| 8 | 121 | **AAC Advanced Aircraft Coatings, Inc.** | Industrial / warehouse | 1.6 mi | 408 ft (1.5 min) | (405) 495-7545 · 11020 Roxboro Ave, OKC 73162 · 2â€“5 employees. Scores high on the model, too small to earn a machine. |
+| 8 | 121 | **AAC Advanced Aircraft Coatings, Inc.** | Industrial / warehouse | 1.6 mi | 408 ft (1.5 min) | (405) 495-7545 · 11020 Roxboro Ave, OKC 73162 · 2–5 employees. Scores high on the model, too small to earn a machine. |
 | 9 | 121 | **Oklahoma Heart Hospital - North Campus** | Hospital | 1.96 mi | 1,342 ft (4.8 min) | (405) 608-3200 · 4050 W Memorial Rd, OKC 73120 · 290 providers across 36 specialties. |
 | 10 | 121 | **Tim R. Love, M.D.** | Clinic | 2.45 mi | 4,790 ft (17.1 min) | (405) 751-5683 · 11101 Hefner Pointe Dr, OKC 73120 · Most isolated clinic in the ring: nearest food 4,790 ft. |
-| 11 | 116 | **Mercy Rehabilitation Hospital Oklahoma City** | Hospital | 1.46 mi | 846 ft (3 min) | (405) 384-5201 · 5401 W Memorial Rd, OKC 73142 · 50â€“66 beds. Inpatient rehab: families wait for hours. |
+| 11 | 116 | **Mercy Rehabilitation Hospital Oklahoma City** | Hospital | 1.46 mi | 846 ft (3 min) | (405) 384-5201 · 5401 W Memorial Rd, OKC 73142 · 50–66 beds. Inpatient rehab: families wait for hours. |
 | 12 | 115 | **Oklahoma Spine Hospital** | Hospital | 2.88 mi | 1,482 ft (5.3 min) | (405) 749-2700 · 14101 Parkway Commons Dr, OKC 73134 · About 245 employees, 12 physicians. |
-| 13 | 114 | **Helton Law Firm** | Office | 1.62 mi | 1,792 ft (6.4 min) | (405) 754-2074 · 5101 Gaillardia Corporate Pl, OKC 73142 · Gaillardia Corporate Place â€” multi-tenant office park, ask the property manager. |
+| 13 | 114 | **Helton Law Firm** | Office | 1.62 mi | 1,792 ft (6.4 min) | (405) 754-2074 · 5101 Gaillardia Corporate Pl, OKC 73142 · Gaillardia Corporate Place — multi-tenant office park, ask the property manager. |
 | 14 | 113 | **Perk Place** | Auto / trade shop | 1.8 mi | 827 ft (3 min) | — |
 | 15 | 113 | **Battison Honda** | Dealer / trade supply | 2.83 mi | 1,826 ft (6.5 min) | 8700 Northwest Expy, OKC 73132 |
 | 16 | 113 | **Orr Nissan West** | Dealer / trade supply | 2.88 mi | 1,747 ft (6.2 min) | 8800 Northwest Expy, OKC 73132 |
@@ -89,7 +89,7 @@ Phone numbers are from published listings. "—" means not verified; don't assum
 | 20 | 105 | **Christian Brothers Automotive** | Auto / trade shop | 0.93 mi | 338 ft (1.2 min) | (405) 384-4162 · 6801 W Hefner Rd, OKC 73162 · Waiting room. Under a mile from the house. |
 | 21 | 105 | **Classic Chevrolet OKC** | Dealer / trade supply | 2.95 mi | 1,278 ft (4.6 min) | (405) 470-8800 · 8900 Northwest Expy, OKC 73132 · Dealer service bays. |
 | 22 | 102 | **GoldKey Service Center** | Auto / trade shop | 1.14 mi | 233 ft (0.8 min) | (405) 603-4545 · 5930 W Memorial Rd, OKC 73142 |
-| 23 | 102 | **FastLap** | Auto / trade shop | 1.15 mi | 311 ft (1.1 min) | (405) 506-0093 · 5930 W Memorial Rd, OKC 73142 · Same building as GoldKey â€” one visit covers both. |
+| 23 | 102 | **FastLap** | Auto / trade shop | 1.15 mi | 311 ft (1.1 min) | (405) 506-0093 · 5930 W Memorial Rd, OKC 73142 · Same building as GoldKey — one visit covers both. |
 | 24 | 102 | **Discount Tire** | Auto / trade shop | 1.15 mi | 261 ft (0.9 min) | 5924 W Memorial Rd, OKC 73142 |
 | 25 | 102 | **Aqua-Tots Swim Schools** | Gym / sports | 2.63 mi | 849 ft (3 min) | — |
 | 26 | 102 | **YMCA** | Gym / sports | 2.74 mi | 955 ft (3.4 min) | — |
