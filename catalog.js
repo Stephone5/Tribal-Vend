@@ -127,6 +127,11 @@ export const MONTHLY = [
   { m: "Apr 26", card: 551, cash: 269,  debits: 1554,  balance: 443  },
   { m: "May 26", card: 667, cash: 0,    debits: 425,   balance: 686  },
   { m: "Jun 26", card: 578, cash: 540,  debits: 570,   balance: 1233 },
+  // From the FNB statements in Drive (Financials → Bank Transactions).
+  // Jul: five card deposits, no cash. Aug: two card deposits plus a $374.60 cash
+  // deposit; the $980.97 U-Haul (the move to Oklahoma) is inside the debits.
+  { m: "Jul 26", card: 813.31, cash: 0,      debits: 462.79,  balance: 1583.41 },
+  { m: "Aug 26", card: 230.67, cash: 374.60, debits: 1349.72, balance: 838.96 },
 ];
 
 // Operating fixed costs — the recurring bills that ARE expenses. The Wendle
